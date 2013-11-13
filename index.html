@@ -5,11 +5,11 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>My Octopress Blog</title>
-  <meta name="author" content="Your Name">
+  <title>Paris Blog</title>
+  <meta name="author" content="Han-Chun Yeh (Paris)">
 
   
-  <meta name="description" content=" Blog Archives Recent Posts ">
+  <meta name="description" content="While dealing with board bring-up powered by Tegra5, starts to aware of this upstream change for ram console (aka /proc/last_kmsg). A working group, &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -21,7 +21,7 @@
   <link rel="canonical" href="http://pyeh.github.io">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
-  <link href="/atom.xml" rel="alternate" title="My Octopress Blog" type="application/atom+xml">
+  <link href="/atom.xml" rel="alternate" title="Paris Blog" type="application/atom+xml">
   <script src="/javascripts/modernizr-2.0.js"></script>
   <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
   <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/lib/jquery.min.js"%3E%3C/script%3E'))</script>
@@ -36,9 +36,9 @@
 
 <body   >
   <header role="banner"><hgroup>
-  <h1><a href="/">My Octopress Blog</a></h1>
+  <h1><a href="/">Paris Blog</a></h1>
   
-    <h2>A blogging framework for hackers.</h2>
+    <h2>A blog or note for software development</h2>
   
 </hgroup>
 
@@ -66,6 +66,50 @@
       <div class="blog-index">
   
   
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2013/11/08/android-ram-console-upstreaming/">Android Ram-console Upstreaming</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-11-08T17:45:00+08:00" pubdate data-updated="true">Nov 8<span>th</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>While dealing with board bring-up powered by Tegra5, starts to aware of this upstream change for ram console (aka /proc/last_kmsg). A working group, Android Upstreaming, comes from Linaro foundation to merge ram_console into pstore framework ( <a href="http://lwn.net/Articles/497881/">http://lwn.net/Articles/497881/</a>).</p>
+
+<p>The Android Upstreaming team&rsquo;s mission is to reduce and eventually eliminate the differences between the upstream kernel and the Android kernel. The team works closely with Google and upstream kernel developers to find ways to implement Android required features in a way that meets the need of both communities.</p>
+
+<p>There are currently two competing debug facilities to store kernel messages in a persistent storage: a generic pstore and Google&rsquo;s persistent_ram by Colin Cross. Not so long ago (<a href="https://lkml.org/lkml/2012/3/8/252">https://lkml.org/lkml/2012/3/8/252</a>) noticed by Greg KH@ARM Linux, it was decided to fix this situation. There is a buleprint registered by Linaro Linux to descrbie those debug facilities at <a href="https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console">https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console</a></p>
+
+<p>To follow up android upstreaming&rsquo;s works, I remove legacy driver supporting for ram console and persistent ram and switch new pstore framework. In other words, start to looking into /sys/fs/pstore/console-ramoops as we used to did analysis on /proc/last_kmsg for dying moment across system reboot.</p>
+
+<p>My works were merged into Asus internal development branch jb-mr2-t50-k3.10, but not opened yet. We could refer to <a href="https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10">https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10</a> for further reference.</p>
+</div>
+  
+  
+
+
+    </article>
+  
   <div class="pagination">
     
     <a href="/blog/archives">Blog Archives</a>
@@ -77,6 +121,10 @@
     <section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2013/11/08/android-ram-console-upstreaming/">Android Ram-console Upstreaming</a>
+      </li>
     
   </ul>
 </section>
@@ -91,7 +139,7 @@
     </div>
   </div>
   <footer role="contentinfo"><p>
-  Copyright &copy; 2013 - Your Name -
+  Copyright &copy; 2013 - Han-Chun Yeh (Paris) -
   <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
 </p>
 
@@ -99,6 +147,15 @@
   
 
 
+
+<div id="fb-root"></div>
+<script>(function(d, s, id) {
+  var js, fjs = d.getElementsByTagName(s)[0];
+  if (d.getElementById(id)) {return;}
+  js = d.createElement(s); js.id = id; js.async = true;
+  js.src = "//connect.facebook.net/en_US/all.js#appId=212934732101925&xfbml=1";
+  fjs.parentNode.insertBefore(js, fjs);
+}(document, 'script', 'facebook-jssdk'));</script>
 
 
 
