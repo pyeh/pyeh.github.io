@@ -3,9 +3,9 @@
 # ----------------------- #
 
 url: http://pyeh.github.io
-title: My Octopress Blog
-subtitle: A blogging framework for hackers.
-author: Your Name
+title: Paris Blog
+subtitle: A blog or note for software development
+author: Han-Chun Yeh (Paris)
 simple_search: http://google.com/search
 description:
 
@@ -97,4 +97,4 @@ disqus_show_comment_count: false
 google_analytics_tracking_id:
 
 # Facebook Like
-facebook_like: false
+facebook_like: true
