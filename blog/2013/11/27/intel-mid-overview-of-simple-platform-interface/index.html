@@ -5,11 +5,12 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Android ram-console upstreaming - Paris Blog</title>
+  <title>intel_mid: Overview of Simple Platform Interface - Paris Blog</title>
   <meta name="author" content="Han-Chun Yeh (Paris)">
 
   
-  <meta name="description" content="While dealing with board bring-up powered by Tegra5, starts to aware of this upstream change for ram console (aka /proc/last_kmsg). A working group, &hellip;">
+  <meta name="description" content="Start to develop android kernel under X86 MID platform, merrifield.
+I am a newbie for porting kernel to Atom-based platform but am familiar with &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -18,7 +19,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming">
+  <link rel="canonical" href="http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
   <link href="/atom.xml" rel="alternate" title="Paris Blog" type="application/atom+xml">
@@ -68,7 +69,7 @@
   
   <header>
     
-      <h1 class="entry-title">Android Ram-console Upstreaming</h1>
+      <h1 class="entry-title">Intel_mid: Overview of Simple Platform Interface</h1>
     
     
       <p class="meta">
@@ -84,22 +85,27 @@
   
 
 
-<time datetime="2013-11-08T17:45:00+08:00" pubdate data-updated="true">Nov 8<span>th</span>, 2013</time>
+<time datetime="2013-11-27T15:40:00+08:00" pubdate data-updated="true">Nov 27<span>th</span>, 2013</time>
         
       </p>
     
   </header>
 
 
-<div class="entry-content"><p>While dealing with board bring-up powered by Tegra5, starts to aware of this upstream change for ram console (aka /proc/last_kmsg). A working group, Android Upstreaming, comes from Linaro foundation to merge ram_console into pstore framework ( <a href="http://lwn.net/Articles/497881/">http://lwn.net/Articles/497881/</a>).</p>
+<div class="entry-content"><p>Start to develop android kernel under X86 MID platform, merrifield.
+I am a newbie for porting kernel to Atom-based platform but am familiar with linux kernel and device drivers.
+Noticed that Intel Android BSP introudes Simple Firmware Interface (SFI) a method for platform firmware to export
+static tables (I2C, SPI, GPIO) to the operation system.</p>
 
-<p>The Android Upstreaming team&rsquo;s mission is to reduce and eventually eliminate the differences between the upstream kernel and the Android kernel. The team works closely with Google and upstream kernel developers to find ways to implement Android required features in a way that meets the need of both communities.</p>
+<p>Intel&rsquo;s newer Atom processors support SFI since &ldquo;Moorestown&rdquo; SoC and SFI implementation was merged into upstream kernel 2.6.32(<a href="http://lwn.net/Articles/340476">http://lwn.net/Articles/340476</a>)</p>
 
-<p>There are currently two competing debug facilities to store kernel messages in a persistent storage: a generic pstore and Google&rsquo;s persistent_ram by Colin Cross. Not so long ago (<a href="https://lkml.org/lkml/2012/3/8/252">https://lkml.org/lkml/2012/3/8/252</a>) noticed by Greg KH@ARM Linux, it was decided to fix this situation. There is a buleprint registered by Linaro Linux to descrbie those debug facilities at <a href="https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console">https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console</a></p>
+<p>Actually, below link descrbies the SFI and explains how does SFI related to ACPI and UEFI.
+<a href="https://simplefirmware.org/faq">https://simplefirmware.org/faq</a></p>
 
-<p>To follow up android upstreaming&rsquo;s works, I remove legacy driver supporting for ram console and persistent ram and switch new pstore framework. In other words, start to looking into /sys/fs/pstore/console-ramoops as we used to did analysis on /proc/last_kmsg for dying moment across system reboot.</p>
+<p>Besides, below patch sets are to refactor existing code and implement a flexible way to support multiple boards and devices.
+<a href="https://lkml.org/lkml/2013/10/10/81">https://lkml.org/lkml/2013/10/10/81</a></p>
 
-<p>My works were merged into Asus internal development branch jb-mr2-t50-k3.10, but not opened yet. We could refer to <a href="https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10">https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10</a> for further reference.</p>
+<p>/arch/x86/platform/intel-mid/intel_mid_sfi.c is SFI parsing implementation, and let me understand how get_gpio_by_name() works.</p>
 </div>
 
 
@@ -122,12 +128,12 @@
   
 
 
-<time datetime="2013-11-08T17:45:00+08:00" pubdate data-updated="true">Nov 8<span>th</span>, 2013</time>
+<time datetime="2013-11-27T15:40:00+08:00" pubdate data-updated="true">Nov 27<span>th</span>, 2013</time>
       
 
 <span class="categories">
   
-    <a class='category' href='/blog/categories/android/'>android</a>, <a class='category' href='/blog/categories/kernel/'>kernel</a>
+    <a class='category' href='/blog/categories/android/'>android</a>, <a class='category' href='/blog/categories/firmware/'>firmware</a>, <a class='category' href='/blog/categories/intel/'>intel</a>, <a class='category' href='/blog/categories/kernel/'>kernel</a>
   
 </span>
 
@@ -136,7 +142,7 @@
     
       <div class="sharing">
   
-  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming/" data-via="" data-counturl="http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming/" >Tweet</a>
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/" data-via="" data-counturl="http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/" >Tweet</a>
   
   
   
@@ -147,8 +153,8 @@
     
     <p class="meta">
       
+        <a class="basic-alignment left" href="/blog/2013/11/08/android-ram-console-upstreaming/" title="Previous Post: Android ram-console upstreaming">&laquo; Android ram-console upstreaming</a>
       
-        <a class="basic-alignment right" href="/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/" title="Next Post: intel_mid: Overview of Simple Platform Interface">intel_mid: Overview of Simple Platform Interface &raquo;</a>
       
     </p>
   </footer>
