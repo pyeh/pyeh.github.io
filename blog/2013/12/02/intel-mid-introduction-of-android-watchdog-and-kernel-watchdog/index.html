@@ -5,12 +5,11 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>intel_mid: Overview of Simple Platform Interface - Paris Blog</title>
+  <title>intel_mid: Introduction of android watchdogs and kernel watchdogs - Paris Blog</title>
   <meta name="author" content="Han-Chun Yeh (Paris)">
 
   
-  <meta name="description" content="Start to develop android kernel under X86 MID platform, merrifield.
-I am a newbie for porting kernel to Atom-based platform but am familiar with &hellip;">
+  <meta name="description" content="Watchdogs monitor software and hardware device and prevent whole system from hanging. 1. Android framework&rsquo;s Java* watchdog Deal with cases &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -19,7 +18,7 @@ I am a newbie for porting kernel to Atom-based platform but am familiar with &he
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface">
+  <link rel="canonical" href="http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
   <link href="/atom.xml" rel="alternate" title="Paris Blog" type="application/atom+xml">
@@ -69,7 +68,7 @@ I am a newbie for porting kernel to Atom-based platform but am familiar with &he
   
   <header>
     
-      <h1 class="entry-title">Intel_mid: Overview of Simple Platform Interface</h1>
+      <h1 class="entry-title">Intel_mid: Introduction of Android Watchdogs and Kernel Watchdogs</h1>
     
     
       <p class="meta">
@@ -85,27 +84,49 @@ I am a newbie for porting kernel to Atom-based platform but am familiar with &he
   
 
 
-<time datetime="2013-11-27T15:40:00+08:00" pubdate data-updated="true">Nov 27<span>th</span>, 2013</time>
+<time datetime="2013-12-02T17:29:00+08:00" pubdate data-updated="true">Dec 2<span>nd</span>, 2013</time>
         
       </p>
     
   </header>
 
 
-<div class="entry-content"><p>Start to develop android kernel under X86 MID platform, merrifield.
-I am a newbie for porting kernel to Atom-based platform but am familiar with linux kernel and device drivers.
-Noticed that Intel Android BSP introudes Simple Firmware Interface (SFI) a method for platform firmware to export
-static tables (I2C, SPI, GPIO) to the operation system.</p>
+<div class="entry-content"><p>Watchdogs monitor software and hardware device and prevent whole system from hanging.</p>
 
-<p>Intel&rsquo;s newer Atom processors support SFI since &ldquo;Moorestown&rdquo; SoC and SFI implementation was merged into upstream kernel 2.6.32(<a href="http://lwn.net/Articles/340476">http://lwn.net/Articles/340476</a>)</p>
+<h2>1. Android framework&rsquo;s Java* watchdog</h2>
 
-<p>Actually, below link descrbies the SFI and explains how does SFI related to ACPI and UEFI.
-<a href="https://simplefirmware.org/faq">https://simplefirmware.org/faq</a></p>
+<p>Deal with cases when any of the following locks is held for more than a minute or when ServerThread is busy.</p>
 
-<p>Besides, below patch sets are to refactor existing code and implement a flexible way to support multiple boards and devices.
-<a href="https://lkml.org/lkml/2013/10/10/81">https://lkml.org/lkml/2013/10/10/81</a></p>
+<p>&mdash;ThermalManagerService<br/>
+&mdash;PowerManagerService<br/>
+&mdash;WindowMangerService<br/>
+&mdash;MountService<br/>
+&mdash;NetworkManagementService<br/>
+&mdash;ActivityMangerService</p>
 
-<p>/arch/x86/platform/intel-mid/intel_mid_sfi.c is SFI parsing implementation, and let me understand how get_gpio_by_name() works.</p>
+<p>If one of above services hangs for one minute, the java watchdog kills it and results in restarting android&rsquo;s framework by killing the SystemServer.</p>
+
+<h2>2. Device-critical services</h2>
+
+<p>Critical services are declared as &ldquo;critical&rdquo; in the corresponding rc files. (eg, ueventd, servicemanager) If critical services exist or crash more than four times in four minutes, the device will reboot into recovery mode. This feature is handled by the init process.</p>
+
+<h2>3. Kernel watchdog leads to COLD_RESET</h2>
+
+<p>The kernel wathcdog prvents the operating system from haning. The System Control Unit (SCU firmware) resets the platform when the kernel cannot schedule the watchdog daemon (/usr/bin/ia_watchdogd).</p>
+
+<p>The driver located at /drivers/watchdog/intel_scu_watchdog_evo.c provides a /dev/watchdog device to access the kernel watchdog and ioctls to configure the timer. Since the SCU provides the functionality, all access to watchdog features are routed to the SCU via an IPC (see more PIC regitration at arch/x86/platform/intel-mid/intel_mid_scu.c)</p>
+
+<h2>4. Userspace watchdog daemon</h2>
+
+<p>Source codes are located at /hardware/ia_watchdog/watchdog_daemon folder) and target location is /usr/bin/ia_watchdogd. This daemon is declared as one-shot service in the rc file (init.watchdog.rc) and perform the following steps:</p>
+
+<p>&mdash;open the watchdog device /dev/watchdog.<br/>
+&mdash;configure the pre_timeout with 75 and timeout with 90.<br/>
+&mdash;Loop forever. In the loop, kick the watchdog device (by writing to &lsquo;R&rsquo; to /dev/watchdog) every 60 seconds.</p>
+
+<h2>5. SCU watchdog leads to PLATFORM_RESET(deep reset)</h2>
+
+<p>This prevents the platform stucking on SCU by issuing a PLATFORM_RESET because the interface between the SCU and PMIC is broken.</p>
 </div>
 
 
@@ -128,12 +149,12 @@ static tables (I2C, SPI, GPIO) to the operation system.</p>
   
 
 
-<time datetime="2013-11-27T15:40:00+08:00" pubdate data-updated="true">Nov 27<span>th</span>, 2013</time>
+<time datetime="2013-12-02T17:29:00+08:00" pubdate data-updated="true">Dec 2<span>nd</span>, 2013</time>
       
 
 <span class="categories">
   
-    <a class='category' href='/blog/categories/android/'>android</a>, <a class='category' href='/blog/categories/firmware/'>firmware</a>, <a class='category' href='/blog/categories/intel/'>intel</a>, <a class='category' href='/blog/categories/kernel/'>kernel</a>
+    <a class='category' href='/blog/categories/android/'>android</a>, <a class='category' href='/blog/categories/intel/'>intel</a>, <a class='category' href='/blog/categories/kernel/'>kernel</a>
   
 </span>
 
@@ -142,7 +163,7 @@ static tables (I2C, SPI, GPIO) to the operation system.</p>
     
       <div class="sharing">
   
-  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/" data-via="" data-counturl="http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/" >Tweet</a>
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog/" data-via="" data-counturl="http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog/" >Tweet</a>
   
   
   
@@ -153,10 +174,8 @@ static tables (I2C, SPI, GPIO) to the operation system.</p>
     
     <p class="meta">
       
-        <a class="basic-alignment left" href="/blog/2013/11/08/android-ram-console-upstreaming/" title="Previous Post: Android ram-console upstreaming">&laquo; Android ram-console upstreaming</a>
+        <a class="basic-alignment left" href="/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/" title="Previous Post: intel_mid: Overview of Simple Platform Interface">&laquo; intel_mid: Overview of Simple Platform Interface</a>
       
-      
-        <a class="basic-alignment right" href="/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog/" title="Next Post: intel_mid: Introduction of android watchdogs and kernel watchdogs">intel_mid: Introduction of android watchdogs and kernel watchdogs &raquo;</a>
       
     </p>
   </footer>

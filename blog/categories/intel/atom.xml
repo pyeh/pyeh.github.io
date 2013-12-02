@@ -4,7 +4,7 @@
   <title><![CDATA[Category: intel | Paris Blog]]></title>
   <link href="http://pyeh.github.io/blog/categories/intel/atom.xml" rel="self"/>
   <link href="http://pyeh.github.io/"/>
-  <updated>2013-11-27T16:11:38+08:00</updated>
+  <updated>2013-12-02T21:11:31+08:00</updated>
   <id>http://pyeh.github.io/</id>
   <author>
     <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
@@ -12,6 +12,50 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[intel_mid: Introduction of android watchdogs and kernel watchdogs]]></title>
+    <link href="http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog/"/>
+    <updated>2013-12-02T17:29:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog</id>
+    <content type="html"><![CDATA[<p>Watchdogs monitor software and hardware device and prevent whole system from hanging.</p>
+
+<h2>1. Android framework&rsquo;s Java* watchdog</h2>
+
+<p>Deal with cases when any of the following locks is held for more than a minute or when ServerThread is busy.</p>
+
+<p>&mdash;ThermalManagerService<br/>
+&mdash;PowerManagerService<br/>
+&mdash;WindowMangerService<br/>
+&mdash;MountService<br/>
+&mdash;NetworkManagementService<br/>
+&mdash;ActivityMangerService</p>
+
+<p>If one of above services hangs for one minute, the java watchdog kills it and results in restarting android&rsquo;s framework by killing the SystemServer.</p>
+
+<h2>2. Device-critical services</h2>
+
+<p>Critical services are declared as &ldquo;critical&rdquo; in the corresponding rc files. (eg, ueventd, servicemanager) If critical services exist or crash more than four times in four minutes, the device will reboot into recovery mode. This feature is handled by the init process.</p>
+
+<h2>3. Kernel watchdog leads to COLD_RESET</h2>
+
+<p>The kernel wathcdog prvents the operating system from haning. The System Control Unit (SCU firmware) resets the platform when the kernel cannot schedule the watchdog daemon (/usr/bin/ia_watchdogd).</p>
+
+<p>The driver located at /drivers/watchdog/intel_scu_watchdog_evo.c provides a /dev/watchdog device to access the kernel watchdog and ioctls to configure the timer. Since the SCU provides the functionality, all access to watchdog features are routed to the SCU via an IPC (see more PIC regitration at arch/x86/platform/intel-mid/intel_mid_scu.c)</p>
+
+<h2>4. Userspace watchdog daemon</h2>
+
+<p>Source codes are located at /hardware/ia_watchdog/watchdog_daemon folder) and target location is /usr/bin/ia_watchdogd. This daemon is declared as one-shot service in the rc file (init.watchdog.rc) and perform the following steps:</p>
+
+<p>&mdash;open the watchdog device /dev/watchdog.<br/>
+&mdash;configure the pre_timeout with 75 and timeout with 90.<br/>
+&mdash;Loop forever. In the loop, kick the watchdog device (by writing to &lsquo;R&rsquo; to /dev/watchdog) every 60 seconds.</p>
+
+<h2>5. SCU watchdog leads to PLATFORM_RESET(deep reset)</h2>
+
+<p>This prevents the platform stucking on SCU by issuing a PLATFORM_RESET because the interface between the SCU and PMIC is broken.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[intel_mid: Overview of Simple Platform Interface]]></title>
