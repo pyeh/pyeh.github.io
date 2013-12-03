@@ -5,11 +5,11 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>intel_mid: Introduction of android watchdogs and kernel watchdogs - Paris Blog</title>
+  <title>Intel_mid: Introduction of android watchdogs and kernel watchdogs - Paris Blog</title>
   <meta name="author" content="Han-Chun Yeh (Paris)">
 
   
-  <meta name="description" content="Watchdogs monitor software and hardware device and prevent whole system from hanging. 1. Android framework&rsquo;s Java* watchdog Deal with cases &hellip;">
+  <meta name="description" content="Watchdogs monitor software and hardware device and prevent whole system from hanging. After looking into android BSP running on intel mid, merrifield &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -91,38 +91,461 @@
   </header>
 
 
-<div class="entry-content"><p>Watchdogs monitor software and hardware device and prevent whole system from hanging.</p>
+<div class="entry-content"><p>Watchdogs monitor software and hardware device and prevent whole system from hanging. After looking into android BSP running on intel mid, merrifield, platform, I will try to classfiy watchdog into the following types. The first two belong to native Android supporting, and the last three are specified to intel-mid platform.</p>
 
 <h2>1. Android framework&rsquo;s Java* watchdog</h2>
 
 <p>Deal with cases when any of the following locks is held for more than a minute or when ServerThread is busy.</p>
 
-<p>&mdash;ThermalManagerService<br/>
-&mdash;PowerManagerService<br/>
-&mdash;WindowMangerService<br/>
-&mdash;MountService<br/>
-&mdash;NetworkManagementService<br/>
-&mdash;ActivityMangerService</p>
+<p>&mdash; ThermalManagerService<br/>
+&mdash; PowerManagerService<br/>
+&mdash; WindowMangerService<br/>
+&mdash; MountService<br/>
+&mdash; NetworkManagementService<br/>
+&mdash; ActivityMangerService</p>
 
 <p>If one of above services hangs for one minute, the java watchdog kills it and results in restarting android&rsquo;s framework by killing the SystemServer.</p>
 
 <h2>2. Device-critical services</h2>
 
-<p>Critical services are declared as &ldquo;critical&rdquo; in the corresponding rc files. (eg, ueventd, servicemanager) If critical services exist or crash more than four times in four minutes, the device will reboot into recovery mode. This feature is handled by the init process.</p>
+<p>Critical services are declared as &ldquo;critical&rdquo; in the corresponding rc files (eg, ueventd, servicemanager). If critical services exist or crash more than four times in four minutes, the device will reboot into recovery mode. This feature is handled by the init process.</p>
 
 <h2>3. Kernel watchdog leads to COLD_RESET</h2>
 
-<p>The kernel wathcdog prvents the operating system from haning. The System Control Unit (SCU firmware) resets the platform when the kernel cannot schedule the watchdog daemon (/usr/bin/ia_watchdogd).</p>
+<p>The kernel watchdog prvents the operating system from hanging. The System Control Unit (SCU firmware) resets the platform when the kernel cannot schedule the watchdog daemon (/usr/bin/ia_watchdogd).</p>
 
-<p>The driver located at /drivers/watchdog/intel_scu_watchdog_evo.c provides a /dev/watchdog device to access the kernel watchdog and ioctls to configure the timer. Since the SCU provides the functionality, all access to watchdog features are routed to the SCU via an IPC (see more PIC regitration at arch/x86/platform/intel-mid/intel_mid_scu.c)</p>
+<p>The driver located at /drivers/watchdog/intel_scu_watchdog_evo.c provides a /dev/watchdog device to access the kernel watchdog and ioctls to configure the timer. Since the SCU provides the functionality, all access to watchdog features are routed to the SCU via an IPC (see more PIC regitrations at arch/x86/platform/intel-mid/intel_mid_scu.c)</p>
+
+<ul>
+<li>Init code installs the driver</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>watchdog_rpmsg_init()</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="k">struct</span> <span class="n">rpmsg_driver</span> <span class="n">watchdog_rpmsg</span> <span class="o">=</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">drv</span><span class="p">.</span><span class="n">name</span>       <span class="o">=</span> <span class="n">KBUILD_MODNAME</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">drv</span><span class="p">.</span><span class="n">owner</span>      <span class="o">=</span> <span class="n">THIS_MODULE</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">id_table</span>       <span class="o">=</span> <span class="n">watchdog_rpmsg_id_table</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">probe</span>          <span class="o">=</span> <span class="n">watchdog_rpmsg_probe</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">callback</span>       <span class="o">=</span> <span class="n">watchdog_rpmsg_cb</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">remove</span>         <span class="o">=</span> <span class="n">watchdog_rpmsg_remove</span><span class="p">,</span>
+</span><span class='line'><span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="n">__init</span> <span class="nf">watchdog_rpmsg_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">intel_mid_identify_cpu</span><span class="p">()</span> <span class="o">==</span> <span class="n">INTEL_MID_CPU_CHIP_TANGIER</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">register_rpmsg_driver</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_rpmsg</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: watchdog driver: bad platform</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">ENODEV</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef MODULE</span>
+</span><span class='line'><span class="n">module_init</span><span class="p">(</span><span class="n">watchdog_rpmsg_init</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#else</span>
+</span><span class='line'><span class="n">rootfs_initcall</span><span class="p">(</span><span class="n">watchdog_rpmsg_init</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>create the /dev/watchdog only if the disabled_kernel_watchdog module parameter is not set. It gets the timer&rsquo;s configuration, registers reboot notifier, registers dump handler to irq#15, and adds sysfs/debugfs entries.</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>watchdog_rpmsg_probe()->intel_scu_watchdog_init()</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* Init code */</span>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">intel_scu_watchdog_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">normal_wd_action</span>   <span class="o">=</span> <span class="n">SCU_COLD_RESET_ON_TIMEOUT</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_wd_action</span>   <span class="o">=</span> <span class="n">SCU_COLD_RESET_ON_TIMEOUT</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">shutdown_wd_action</span> <span class="o">=</span> <span class="n">SCU_COLD_OFF_ON_TIMEOUT</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef CONFIG_DEBUG_FS</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">panic_reboot_notifier</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'><span class="cp">#endif </span><span class="cm">/* CONFIG_DEBUG_FS */</span><span class="cp"></span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Initially, we are not in shutdown mode */</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">shutdown_flag</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Check timeouts boot parameter */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">check_timeouts</span><span class="p">(</span><span class="n">pre_timeout</span><span class="p">,</span> <span class="n">timeout</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: Invalid timeouts</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">EINVAL</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Reboot notifier */</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_notifier</span><span class="p">.</span><span class="n">notifier_call</span> <span class="o">=</span> <span class="n">reboot_notifier</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_notifier</span><span class="p">.</span><span class="n">priority</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">register_reboot_notifier</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_notifier</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_crit</span><span class="p">(</span><span class="s">&quot;cannot register reboot notifier %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">error_stop_timer</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Do not publish the watchdog device when disable (TO BE REMOVED) */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">disable_kernel_watchdog</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">.</span><span class="n">minor</span> <span class="o">=</span> <span class="n">WATCHDOG_MINOR</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;watchdog&quot;</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">.</span><span class="n">fops</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_scu_fops</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="n">ret</span> <span class="o">=</span> <span class="n">misc_register</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">.</span><span class="n">fops</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_scu_fops</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="n">ret</span> <span class="o">=</span> <span class="n">misc_register</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">pr_crit</span><span class="p">(</span><span class="s">&quot;Cannot register miscdev %d err =%d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
+</span><span class='line'>                                <span class="n">WATCHDOG_MINOR</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'>                        <span class="k">goto</span> <span class="n">error_reboot_notifier</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* MSI #15 handler to dump registers */</span>
+</span><span class='line'>        <span class="n">handle_mrfl_dev_ioapic</span><span class="p">(</span><span class="n">EXT_TIMER0_MSI</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">request_irq</span><span class="p">((</span><span class="kt">unsigned</span> <span class="kt">int</span><span class="p">)</span><span class="n">EXT_TIMER0_MSI</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">watchdog_warning_interrupt</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">IRQF_SHARED</span><span class="o">|</span><span class="n">IRQF_NO_SUSPEND</span><span class="p">,</span> <span class="s">&quot;watchdog&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;error requesting warning irq %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
+</span><span class='line'>                       <span class="n">EXT_TIMER0_MSI</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;error value returned is %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">error_misc_register</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef CONFIG_INTEL_SCU_SOFT_LOCKUP</span>
+</span><span class='line'>        <span class="n">init_timer</span><span class="p">(</span><span class="o">&amp;</span><span class="n">softlock_timer</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">disable_kernel_watchdog</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: Disable kernel watchdog</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="cm">/* Make sure timer is stopped */</span>
+</span><span class='line'>                <span class="n">ret</span> <span class="o">=</span> <span class="n">watchdog_stop</span><span class="p">();</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">ret</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">pr_debug</span><span class="p">(</span><span class="s">&quot;cant disable timer</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef CONFIG_DEBUG_FS</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">create_debugfs_entries</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: Error creating debugfs entries</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">error_debugfs_entry</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">started</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">create_watchdog_sysfs_files</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: Error creating debugfs entries</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">error_sysfs_entry</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">error_sysfs_entry:</span>
+</span><span class='line'>        <span class="cm">/* Nothing special to do */</span>
+</span><span class='line'><span class="cp">#ifdef CONFIG_DEBUG_FS</span>
+</span><span class='line'><span class="nl">error_debugfs_entry:</span>
+</span><span class='line'>        <span class="cm">/* Remove entries done by create function */</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">error_misc_register:</span>
+</span><span class='line'>        <span class="n">misc_deregister</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">error_reboot_notifier:</span>
+</span><span class='line'>        <span class="n">unregister_reboot_notifier</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_notifier</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">error_stop_timer:</span>
+</span><span class='line'>        <span class="n">watchdog_stop</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>interrupt handler related to pre-timeout dumps kernel backtraces.</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>watchdog_warning_interrupt</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* warning interrupt handler */</span>
+</span><span class='line'><span class="k">static</span> <span class="n">irqreturn_t</span> <span class="nf">watchdog_warning_interrupt</span><span class="p">(</span><span class="kt">int</span> <span class="n">irq</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">dev_id</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="n">pr_warn</span><span class="p">(</span><span class="s">&quot;[SHTDWN] %s, WATCHDOG TIMEOUT!</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Let&#39;s reset the platform after dumping some data */</span>
+</span><span class='line'>        <span class="n">trigger_all_cpu_backtrace</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">panic</span><span class="p">(</span><span class="s">&quot;Kernel Watchdog&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* This code should not be reached */</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">IRQ_HANDLED</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>When power transisition happens, reboot_notifier is called for re-configuring watchdog timeouts and its default behavior.
+COLD_RESET is set to reboot, and COLD_OFF is set to poewr halt and off. In case of a stucking rebooting or shutdown procedure, the platform will still could execute reset or power-off seperately.</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>reboot_notifier</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* Reboot notifier */</span>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">reboot_notifier</span><span class="p">(</span><span class="k">struct</span> <span class="n">notifier_block</span> <span class="o">*</span><span class="n">this</span><span class="p">,</span>
+</span><span class='line'>                           <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">code</span><span class="p">,</span>
+</span><span class='line'>                           <span class="kt">void</span> <span class="o">*</span><span class="n">another_unused</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">code</span> <span class="o">==</span> <span class="n">SYS_RESTART</span> <span class="o">||</span> <span class="n">code</span> <span class="o">==</span> <span class="n">SYS_HALT</span> <span class="o">||</span> <span class="n">code</span> <span class="o">==</span> <span class="n">SYS_POWER_OFF</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_warn</span><span class="p">(</span><span class="s">&quot;Reboot notifier</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">watchdog_set_appropriate_timeouts</span><span class="p">())</span>
+</span><span class='line'>                        <span class="n">pr_crit</span><span class="p">(</span><span class="s">&quot;reboot notifier cant set time</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="k">switch</span> <span class="p">(</span><span class="n">code</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">case</span> <span class="n">SYS_RESTART</span>:
+</span><span class='line'>                        <span class="n">ret</span> <span class="o">=</span> <span class="n">watchdog_set_reset_type</span><span class="p">(</span>
+</span><span class='line'>                                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_wd_action</span><span class="p">);</span>
+</span><span class='line'>                        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="k">case</span> <span class="n">SYS_HALT</span>:
+</span><span class='line'>                <span class="k">case</span> <span class="n">SYS_POWER_OFF</span>:
+</span><span class='line'>                        <span class="n">ret</span> <span class="o">=</span> <span class="n">watchdog_set_reset_type</span><span class="p">(</span>
+</span><span class='line'>                                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">shutdown_wd_action</span><span class="p">);</span>
+</span><span class='line'>                        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: could not set reset type</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef CONFIG_DEBUG_FS</span>
+</span><span class='line'>                <span class="cm">/* debugfs entry to generate a BUG during</span>
+</span><span class='line'><span class="cm">                any shutdown/reboot call */</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">panic_reboot_notifier</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">BUG</span><span class="p">();</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>                <span class="cm">/* Don&#39;t do instant reset on close */</span>
+</span><span class='line'>                <span class="n">reset_on_release</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="cm">/* Kick once again */</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">disable_kernel_watchdog</span> <span class="o">==</span> <span class="nb">false</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">ret</span> <span class="o">=</span> <span class="n">watchdog_keepalive</span><span class="p">();</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+</span><span class='line'>                                <span class="n">pr_warn</span><span class="p">(</span><span class="s">&quot;%s: no keep alive</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                        <span class="cm">/* Don&#39;t allow any more keep-alives */</span>
+</span><span class='line'>                        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">shutdown_flag</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">NOTIFY_DONE</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
 
 <h2>4. Userspace watchdog daemon</h2>
 
 <p>Source codes are located at /hardware/ia_watchdog/watchdog_daemon folder) and target location is /usr/bin/ia_watchdogd. This daemon is declared as one-shot service in the rc file (init.watchdog.rc) and perform the following steps:</p>
 
-<p>&mdash;open the watchdog device /dev/watchdog.<br/>
-&mdash;configure the pre_timeout with 75 and timeout with 90.<br/>
-&mdash;Loop forever. In the loop, kick the watchdog device (by writing to &lsquo;R&rsquo; to /dev/watchdog) every 60 seconds.</p>
+<p>&mdash; open the watchdog device /dev/watchdog.<br/>
+&mdash; configure the pre_timeout with 75 seconds and timeout with 90 seconds.<br/>
+&mdash; Loop forever. In the loop, kick the watchdog device (by writing to &lsquo;R&rsquo; to /dev/watchdog) every 60 seconds.</p>
 
 <h2>5. SCU watchdog leads to PLATFORM_RESET(deep reset)</h2>
 

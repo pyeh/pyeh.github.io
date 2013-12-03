@@ -4,7 +4,7 @@
   <title><![CDATA[Category: kernel | Paris Blog]]></title>
   <link href="http://pyeh.github.io/blog/categories/kernel/atom.xml" rel="self"/>
   <link href="http://pyeh.github.io/"/>
-  <updated>2013-12-02T21:11:31+08:00</updated>
+  <updated>2013-12-03T11:44:40+08:00</updated>
   <id>http://pyeh.github.io/</id>
   <author>
     <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
@@ -14,42 +14,311 @@
 
   
   <entry>
-    <title type="html"><![CDATA[intel_mid: Introduction of android watchdogs and kernel watchdogs]]></title>
+    <title type="html"><![CDATA[Intel_mid: Introduction of android watchdogs and kernel watchdogs]]></title>
     <link href="http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog/"/>
     <updated>2013-12-02T17:29:00+08:00</updated>
     <id>http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog</id>
-    <content type="html"><![CDATA[<p>Watchdogs monitor software and hardware device and prevent whole system from hanging.</p>
+    <content type="html"><![CDATA[<p>Watchdogs monitor software and hardware device and prevent whole system from hanging. After looking into android BSP running on intel mid, merrifield, platform, I will try to classfiy watchdog into the following types. The first two belong to native Android supporting, and the last three are specified to intel-mid platform.</p>
 
 <h2>1. Android framework&rsquo;s Java* watchdog</h2>
 
 <p>Deal with cases when any of the following locks is held for more than a minute or when ServerThread is busy.</p>
 
-<p>&mdash;ThermalManagerService<br/>
-&mdash;PowerManagerService<br/>
-&mdash;WindowMangerService<br/>
-&mdash;MountService<br/>
-&mdash;NetworkManagementService<br/>
-&mdash;ActivityMangerService</p>
+<p>&mdash; ThermalManagerService<br/>
+&mdash; PowerManagerService<br/>
+&mdash; WindowMangerService<br/>
+&mdash; MountService<br/>
+&mdash; NetworkManagementService<br/>
+&mdash; ActivityMangerService</p>
 
 <p>If one of above services hangs for one minute, the java watchdog kills it and results in restarting android&rsquo;s framework by killing the SystemServer.</p>
 
 <h2>2. Device-critical services</h2>
 
-<p>Critical services are declared as &ldquo;critical&rdquo; in the corresponding rc files. (eg, ueventd, servicemanager) If critical services exist or crash more than four times in four minutes, the device will reboot into recovery mode. This feature is handled by the init process.</p>
+<p>Critical services are declared as &ldquo;critical&rdquo; in the corresponding rc files (eg, ueventd, servicemanager). If critical services exist or crash more than four times in four minutes, the device will reboot into recovery mode. This feature is handled by the init process.</p>
 
 <h2>3. Kernel watchdog leads to COLD_RESET</h2>
 
-<p>The kernel wathcdog prvents the operating system from haning. The System Control Unit (SCU firmware) resets the platform when the kernel cannot schedule the watchdog daemon (/usr/bin/ia_watchdogd).</p>
+<p>The kernel watchdog prvents the operating system from hanging. The System Control Unit (SCU firmware) resets the platform when the kernel cannot schedule the watchdog daemon (/usr/bin/ia_watchdogd).</p>
 
-<p>The driver located at /drivers/watchdog/intel_scu_watchdog_evo.c provides a /dev/watchdog device to access the kernel watchdog and ioctls to configure the timer. Since the SCU provides the functionality, all access to watchdog features are routed to the SCU via an IPC (see more PIC regitration at arch/x86/platform/intel-mid/intel_mid_scu.c)</p>
+<p>The driver located at /drivers/watchdog/intel_scu_watchdog_evo.c provides a /dev/watchdog device to access the kernel watchdog and ioctls to configure the timer. Since the SCU provides the functionality, all access to watchdog features are routed to the SCU via an IPC (see more PIC regitrations at arch/x86/platform/intel-mid/intel_mid_scu.c)</p>
+
+<ul>
+<li>Init code installs the driver
+``` c watchdog_rpmsg_init()
+static struct rpmsg_driver watchdog_rpmsg = {
+      .drv.name       = KBUILD_MODNAME,
+      .drv.owner      = THIS_MODULE,
+      .id_table       = watchdog_rpmsg_id_table,
+      .probe          = watchdog_rpmsg_probe,
+      .callback       = watchdog_rpmsg_cb,
+      .remove         = watchdog_rpmsg_remove,
+};</li>
+</ul>
+
+
+<p>static int __init watchdog_rpmsg_init(void)
+{</p>
+
+<pre><code>    if (intel_mid_identify_cpu() == INTEL_MID_CPU_CHIP_TANGIER)
+            return register_rpmsg_driver(&amp;watchdog_rpmsg);
+    else {                                                                                                                      
+            pr_err("%s: watchdog driver: bad platform\n", __func__);
+            return -ENODEV;
+    }
+</code></pre>
+
+<p>}</p>
+
+<h1>ifdef MODULE</h1>
+
+<p>module_init(watchdog_rpmsg_init);</p>
+
+<h1>else</h1>
+
+<p>rootfs_initcall(watchdog_rpmsg_init);</p>
+
+<h1>endif</h1>
+
+<p>```</p>
+
+<ul>
+<li><p>create the /dev/watchdog only if the disabled_kernel_watchdog module parameter is not set. It gets the timer&rsquo;s configuration, registers reboot notifier, registers dump handler to irq#15, and adds sysfs/debugfs entries.
+``` c watchdog_rpmsg_probe()&ndash;>intel_scu_watchdog_init()
+/<em> Init code </em>/
+static int intel_scu_watchdog_init(void)
+{
+      int ret = 0;</p>
+
+<pre><code>  watchdog_device.normal_wd_action   = SCU_COLD_RESET_ON_TIMEOUT;
+  watchdog_device.reboot_wd_action   = SCU_COLD_RESET_ON_TIMEOUT;
+  watchdog_device.shutdown_wd_action = SCU_COLD_OFF_ON_TIMEOUT;
+</code></pre></li>
+</ul>
+
+
+<h1>ifdef CONFIG_DEBUG_FS</h1>
+
+<pre><code>    watchdog_device.panic_reboot_notifier = false;
+</code></pre>
+
+<h1>endif /<em> CONFIG_DEBUG_FS </em>/</h1>
+
+<pre><code>    /* Initially, we are not in shutdown mode */
+    watchdog_device.shutdown_flag = false;
+
+    /* Check timeouts boot parameter */
+    if (check_timeouts(pre_timeout, timeout)) {
+            pr_err("%s: Invalid timeouts\n", __func__);
+            return -EINVAL;
+    }
+
+    /* Reboot notifier */
+    watchdog_device.reboot_notifier.notifier_call = reboot_notifier;
+    watchdog_device.reboot_notifier.priority = 1;
+    ret = register_reboot_notifier(&amp;watchdog_device.reboot_notifier);
+    if (ret) {
+            pr_crit("cannot register reboot notifier %d\n", ret);
+            goto error_stop_timer;
+    }
+
+    /* Do not publish the watchdog device when disable (TO BE REMOVED) */
+    if (!disable_kernel_watchdog) {
+            watchdog_device.miscdev.minor = WATCHDOG_MINOR;
+            watchdog_device.miscdev.name = "watchdog";
+            watchdog_device.miscdev.fops = &amp;intel_scu_fops;
+
+            ret = misc_register(&amp;watchdog_device.miscdev);
+            watchdog_device.miscdev.fops = &amp;intel_scu_fops;
+
+            ret = misc_register(&amp;watchdog_device.miscdev);
+            if (ret) {
+                    pr_crit("Cannot register miscdev %d err =%d\n",
+                            WATCHDOG_MINOR, ret);
+                    goto error_reboot_notifier;
+            }
+    }
+
+    /* MSI #15 handler to dump registers */
+    handle_mrfl_dev_ioapic(EXT_TIMER0_MSI);
+    ret = request_irq((unsigned int)EXT_TIMER0_MSI,
+            watchdog_warning_interrupt,
+            IRQF_SHARED|IRQF_NO_SUSPEND, "watchdog",
+            &amp;watchdog_device);
+    if (ret) {
+            pr_err("error requesting warning irq %d\n",
+                   EXT_TIMER0_MSI);
+            pr_err("error value returned is %d\n", ret);
+            goto error_misc_register;
+    }
+</code></pre>
+
+<h1>ifdef CONFIG_INTEL_SCU_SOFT_LOCKUP</h1>
+
+<pre><code>    init_timer(&amp;softlock_timer);
+</code></pre>
+
+<h1>endif</h1>
+
+<pre><code>    if (disable_kernel_watchdog) {
+            pr_err("%s: Disable kernel watchdog\n", __func__);
+
+            /* Make sure timer is stopped */
+            ret = watchdog_stop();
+            if (ret != 0)
+                    pr_debug("cant disable timer\n");
+    }
+</code></pre>
+
+<h1>ifdef CONFIG_DEBUG_FS</h1>
+
+<pre><code>    ret = create_debugfs_entries();  
+    if (ret) {
+            pr_err("%s: Error creating debugfs entries\n", __func__);
+            goto error_debugfs_entry;
+    }
+</code></pre>
+
+<h1>endif</h1>
+
+<pre><code>    watchdog_device.started = false;
+
+    ret = create_watchdog_sysfs_files();
+    if (ret) {
+            pr_err("%s: Error creating debugfs entries\n", __func__);
+            goto error_sysfs_entry;
+    }
+
+    return ret;
+</code></pre>
+
+<p>error_sysfs_entry:</p>
+
+<pre><code>    /* Nothing special to do */
+</code></pre>
+
+<h1>ifdef CONFIG_DEBUG_FS</h1>
+
+<p>error_debugfs_entry:</p>
+
+<pre><code>    /* Remove entries done by create function */
+</code></pre>
+
+<h1>endif</h1>
+
+<p>error_misc_register:</p>
+
+<pre><code>    misc_deregister(&amp;watchdog_device.miscdev);
+</code></pre>
+
+<p>error_reboot_notifier:</p>
+
+<pre><code>    unregister_reboot_notifier(&amp;watchdog_device.reboot_notifier);
+</code></pre>
+
+<p>error_stop_timer:</p>
+
+<pre><code>    watchdog_stop();
+
+    return ret;
+</code></pre>
+
+<p>}
+```</p>
+
+<ul>
+<li><p>interrupt handler related to pre-timeout dumps kernel backtraces.
+``` c watchdog_warning_interrupt
+/<em> warning interrupt handler </em>/
+static irqreturn_t watchdog_warning_interrupt(int irq, void *dev_id)
+{
+      pr_warn(&ldquo;[SHTDWN] %s, WATCHDOG TIMEOUT!\n&rdquo;, <strong>func</strong>);</p>
+
+<pre><code>  /* Let's reset the platform after dumping some data */ 
+  trigger_all_cpu_backtrace(); 
+  panic("Kernel Watchdog"); 
+
+  /* This code should not be reached */ 
+  return IRQ_HANDLED; 
+</code></pre>
+
+<p>}</p></li>
+</ul>
+
+
+<p>```</p>
+
+<ul>
+<li><p>When power transisition happens, reboot_notifier is called for re-configuring watchdog timeouts and its default behavior.
+COLD_RESET is set to reboot, and COLD_OFF is set to poewr halt and off. In case of a stucking rebooting or shutdown procedure, the platform will still could execute reset or power-off seperately.
+``` c reboot_notifier
+/<em> Reboot notifier </em>/
+static int reboot_notifier(struct notifier_block <em>this,
+                         unsigned long code,
+                         void </em>another_unused)
+{
+      int ret;</p>
+
+<pre><code>  if (code == SYS_RESTART || code == SYS_HALT || code == SYS_POWER_OFF) {
+          pr_warn("Reboot notifier\n");
+
+          if (watchdog_set_appropriate_timeouts())
+                  pr_crit("reboot notifier cant set time\n");
+
+          switch (code) {
+          case SYS_RESTART:
+                  ret = watchdog_set_reset_type(
+                          watchdog_device.reboot_wd_action);
+                  break;
+
+          case SYS_HALT:
+          case SYS_POWER_OFF:
+                  ret = watchdog_set_reset_type(
+                          watchdog_device.shutdown_wd_action);
+                  break;
+          }
+          if (ret)
+                  pr_err("%s: could not set reset type\n", __func__);
+</code></pre></li>
+</ul>
+
+
+<h1>ifdef CONFIG_DEBUG_FS</h1>
+
+<pre><code>            /* debugfs entry to generate a BUG during
+            any shutdown/reboot call */
+            if (watchdog_device.panic_reboot_notifier)
+                    BUG();
+</code></pre>
+
+<h1>endif</h1>
+
+<pre><code>            /* Don't do instant reset on close */
+            reset_on_release = false;
+
+            /* Kick once again */
+            if (disable_kernel_watchdog == false) {
+                    ret = watchdog_keepalive();
+                    if (ret)
+                            pr_warn("%s: no keep alive\n", __func__);
+
+                    /* Don't allow any more keep-alives */
+                    watchdog_device.shutdown_flag = true;
+            }
+    }
+    return NOTIFY_DONE;
+</code></pre>
+
+<p>}
+```</p>
 
 <h2>4. Userspace watchdog daemon</h2>
 
 <p>Source codes are located at /hardware/ia_watchdog/watchdog_daemon folder) and target location is /usr/bin/ia_watchdogd. This daemon is declared as one-shot service in the rc file (init.watchdog.rc) and perform the following steps:</p>
 
-<p>&mdash;open the watchdog device /dev/watchdog.<br/>
-&mdash;configure the pre_timeout with 75 and timeout with 90.<br/>
-&mdash;Loop forever. In the loop, kick the watchdog device (by writing to &lsquo;R&rsquo; to /dev/watchdog) every 60 seconds.</p>
+<p>&mdash; open the watchdog device /dev/watchdog.<br/>
+&mdash; configure the pre_timeout with 75 seconds and timeout with 90 seconds.<br/>
+&mdash; Loop forever. In the loop, kick the watchdog device (by writing to &lsquo;R&rsquo; to /dev/watchdog) every 60 seconds.</p>
 
 <h2>5. SCU watchdog leads to PLATFORM_RESET(deep reset)</h2>
 
