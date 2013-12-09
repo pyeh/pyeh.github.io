@@ -4,7 +4,7 @@
   <title><![CDATA[Category: kernel | Paris Blog]]></title>
   <link href="http://pyeh.github.io/blog/categories/kernel/atom.xml" rel="self"/>
   <link href="http://pyeh.github.io/"/>
-  <updated>2013-12-09T19:21:51+08:00</updated>
+  <updated>2013-12-09T19:40:29+08:00</updated>
   <id>http://pyeh.github.io/</id>
   <author>
     <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
@@ -14,10 +14,10 @@
 
   
   <entry>
-    <title type="html"><![CDATA[Intel_mide: CPUIDLE: Intel_idle processor driver and new C-States]]></title>
-    <link href="http://pyeh.github.io/blog/2013/12/06/intel-mide-cpuidle-intel-idle-processor-driver-and-new-c-states/"/>
+    <title type="html"><![CDATA[Intel_mid: CPUIDLE: Intel_idle processor driver and new C-States]]></title>
+    <link href="http://pyeh.github.io/blog/2013/12/06/intel-mid-cpuidle-intel-idle-processor-driver-and-new-c-states/"/>
     <updated>2013-12-06T17:34:00+08:00</updated>
-    <id>http://pyeh.github.io/blog/2013/12/06/intel-mide-cpuidle-intel-idle-processor-driver-and-new-c-states</id>
+    <id>http://pyeh.github.io/blog/2013/12/06/intel-mid-cpuidle-intel-idle-processor-driver-and-new-c-states</id>
     <content type="html"><![CDATA[<p>When there is nothing left to do, the CPUs will go into the idle state to wait until it is needed again. These idle modes, which go by names like &ldquo;C states,&rdquo; vary in the amount of power saved, but also in the amount of ancillary information which may be lost and the amount of time required to get back into a fully-functional mode.</p>
 
 <p>Intel_idle driver actually performs idle state power management, and regsiters into existing CPU Idle subsystem and extends driver for Merrifield CPU (Slivermont). It also introduces a new platform idle states C7x deeper than traditional C6 state. The overall idea is that CPU C7x-states are extended to devices and rest of the platform, hence puting the platform to S0ix states.</p>
