@@ -20,11 +20,17 @@
         <loc>
             http://pyeh.github.io/blog/2013/12/04/intel-mid-android-power-management-flow-for-suspend-slash-resume-using-s0i3-implementation/
         </loc>
-        <lastmod>2013-12-04T20:09:12+08:00</lastmod>
+        <lastmod>2013-12-04T20:32:53+08:00</lastmod>
+    </url>
+    <url>
+        <loc>
+            http://pyeh.github.io/blog/2013/12/06/intel-mide-cpuidle-intel-idle-processor-driver-and-new-c-states/
+        </loc>
+        <lastmod>2013-12-09T19:14:45+08:00</lastmod>
     </url>
     <url>
         <loc>http://pyeh.github.io/blog/archives/</loc>
-        <lastmod>2013-12-04T20:09:12+08:00</lastmod>
+        <lastmod>2013-12-09T19:14:45+08:00</lastmod>
     </url>
     <url>
         <loc>http://pyeh.github.io/robots.txt</loc>
@@ -32,6 +38,6 @@
     </url>
     <url>
         <loc>http://pyeh.github.io/</loc>
-        <lastmod>2013-12-04T20:09:12+08:00</lastmod>
+        <lastmod>2013-12-09T19:14:45+08:00</lastmod>
     </url>
 </urlset>

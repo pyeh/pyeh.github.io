@@ -4,7 +4,7 @@
   <title><![CDATA[Category: android | Paris Blog]]></title>
   <link href="http://pyeh.github.io/blog/categories/android/atom.xml" rel="self"/>
   <link href="http://pyeh.github.io/"/>
-  <updated>2013-12-04T20:09:52+08:00</updated>
+  <updated>2013-12-09T19:16:24+08:00</updated>
   <id>http://pyeh.github.io/</id>
   <author>
     <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
@@ -18,24 +18,24 @@
     <link href="http://pyeh.github.io/blog/2013/12/04/intel-mid-android-power-management-flow-for-suspend-slash-resume-using-s0i3-implementation/"/>
     <updated>2013-12-04T11:19:00+08:00</updated>
     <id>http://pyeh.github.io/blog/2013/12/04/intel-mid-android-power-management-flow-for-suspend-slash-resume-using-s0i3-implementation</id>
-    <content type="html"><![CDATA[<p>The main PMU driver (arch/x86/platform/intel-mid/intel_soc_pmu.c) hooks to support Linux PM suspend/resume flows as follows.</p>
-
-<ul>
-<li>Register PMU driver as PCI device<br/>
+    <content type="html"><![CDATA[<p>The main PMU driver (arch/x86/platform/intel-mid/intel_soc_pmu.c) hooks to support Linux PM suspend/resume flows as follows.<br/>
+The S0ix states are low-power active idle states that platform can be transitioned into.
+&ndash; Register PMU driver as PCI device<br/>
 The PMU driver registers mid_suspend_ops via suspend_set_ops().
 ```c mid_pci_register_init
-/**</li>
-<li>mid_pci_register_init &ndash; register the PMU driver as PCI device
-*/
-static struct pci_driver driver = {                                                                                               <br/>
-     .name = PMU_DRV_NAME,
-     .id_table = mid_pm_ids,
-     .probe = mid_pmu_probe,
-     .remove = mid_pmu_remove,
-     .shutdown = mid_pmu_shutdown
-};</li>
-</ul>
+/<em>*
+ * mid_pci_register_init &ndash; register the PMU driver as PCI device
+ </em>/
+static struct pci_driver driver = {</p>
 
+<pre><code>    .name = PMU_DRV_NAME,
+    .id_table = mid_pm_ids,
+    .probe = mid_pmu_probe,
+    .remove = mid_pmu_remove,
+    .shutdown = mid_pmu_shutdown
+</code></pre>
+
+<p>};</p>
 
 <p>static int __init mid_pci_register_init(void)
 {</p>
@@ -76,7 +76,7 @@ static struct pci_driver driver = {                                             
 <p>}
 <code>
 - mid_suspend_enter() performs the required S3 state over standby_enter()  
-check_nc_sc_status() hooked by mrfld_nc_sc_status_check() (defind at arch/x86/platform/intel-mid/intel_soc_mrfld.c) is to check north complex (NC) and soutch complex (SC) device status. Return true if all NC and SC devices are in D0i3.
+check_nc_sc_status() hooked by mrfld_nc_sc_status_check (defind at arch/x86/platform/intel-mid/intel_soc_mrfld.c) is to check north complex (NC) and soutch complex (SC) device status. Return true if all NC and SC devices are in D0i3.
 </code> c mid_suspend_enter()
 static const struct platform_suspend_ops mid_suspend_ops = {</p>
 
@@ -121,12 +121,13 @@ static const struct platform_suspend_ops mid_suspend_ops = {</p>
 <p>```</p>
 
 <ul>
-<li>standby_enter() peforms required S3 state over mid_s01x_enter()
+<li>standby_enter() performs requried S3 state
 
 <ul>
 <li>mid_state_to_sys_state() maps power states to driver&rsquo;s internal indexes.</li>
-<li>mid_s01x_enter() perform required S3 state</li>
-<li><p>__mwait(mid_pmu_cxt->s3_hint, 1) is issued with a hint to enter S0i3(S3 emulation using S0i3, as I observed that MRFLD_S3_HINT with 0x64 is same as MID_S0I3_STATE with 0x64). When both core issue an mwait C7, it is a hint provided by the idle driver to enter an S0ix state.
+<li>mid_s01x_enter() performs required S3 state</li>
+<li>__mwait(mid_pmu_cxt->s3_hint, 1) is issued with a hint to enter S0i3(S3 emulation using S0i3, as I observed that MRFLD_S3_HINT with 0x64 is same as MID_S0I3_STATE with 0x64). When both core issue an mwait C7, it is a hint provided by the idle driver to enter an S0ix state.</li>
+<li><p>This triggers S0i3 entry, but the decision and policy is selected by SCU FW.
 ``` c standby_enter()
 static int standby_enter(void)
 {
