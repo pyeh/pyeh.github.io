@@ -1,0 +1,483 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: power | Paris Blog]]></title>
+  <link href="http://pyeh.github.io/blog/categories/power/atom.xml" rel="self"/>
+  <link href="http://pyeh.github.io/"/>
+  <updated>2013-12-09T19:40:29+08:00</updated>
+  <id>http://pyeh.github.io/</id>
+  <author>
+    <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Intel_mid: CPUIDLE: Intel_idle processor driver and new C-States]]></title>
+    <link href="http://pyeh.github.io/blog/2013/12/06/intel-mid-cpuidle-intel-idle-processor-driver-and-new-c-states/"/>
+    <updated>2013-12-06T17:34:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/12/06/intel-mid-cpuidle-intel-idle-processor-driver-and-new-c-states</id>
+    <content type="html"><![CDATA[<p>When there is nothing left to do, the CPUs will go into the idle state to wait until it is needed again. These idle modes, which go by names like &ldquo;C states,&rdquo; vary in the amount of power saved, but also in the amount of ancillary information which may be lost and the amount of time required to get back into a fully-functional mode.</p>
+
+<p>Intel_idle driver actually performs idle state power management, and regsiters into existing CPU Idle subsystem and extends driver for Merrifield CPU (Slivermont). It also introduces a new platform idle states C7x deeper than traditional C6 state. The overall idea is that CPU C7x-states are extended to devices and rest of the platform, hence puting the platform to S0ix states.</p>
+
+<p>On intel mid platform (Merrifield), the PMU driver communicates with the Intel_idle driver, platform device drivers, pci drivers, and the PMU firmwares (NC: Punit, SC:SCU) to coordinate platform power state transitions.</p>
+
+<ol>
+<li><p>The PMU driver provides a platform-specific callback to the Intel_idle driver so that long periods of idleness can be extended to the entire platform.</p>
+
+<ul>
+<li>soc_s0ix_idle()&ndash;>enter_s0ix_state() // intel_idle driver defined at /drivers/idle/intel_idle.c</li>
+<li>mid_s0ix_enter()            // PMU driver defined at /arch/x86/platform/intel-mid/intel_soc_pmu.c</li>
+</ul>
+
+
+<p> I could find out cpuidle_state->.enter() associated with soc_s0ix_idle() for C6 state on medfield platform, and the call stack looks like as above shown. However, I don&rsquo;t figure out the similar assoication between intel_idle and pmu driver on merrifield platform. I am curious if this statement is also appliciable on merrifield platform ??</p></li>
+<li><p>Based on hint of idleness, the PMU driver extends CPU idleness to the reset of the platform via standard Linux PM_QoS, Runtime PM, and PCI PM calls.</p></li>
+<li><p>Once the CPU and devices are all idle, the PMU driver programs the North and South Complex PMUs to implement the required power transitiion for S0ix to eumlate C7-x states.</p></li>
+</ol>
+
+
+<p>Here is very good reference to understand the cpuidle governor and subsystem
+<a href="http://lwn.net/Articles/384146/">http://lwn.net/Articles/384146/</a> before digging into how intel_idle driver fits with current cpuilde intrastructure.</p>
+
+<p>The below is code trace for intel_idle driver located at &ldquo;/drivers/idle/intel_idle.c&rdquo;
+&ndash; Comment in intel_idle driver
+<code>
+/*
+ * intel_idle is a cpuidle driver that loads on specific Intel processors
+ * in lieu of the legacy ACPI processor_idle driver.  The intent is to
+ * make Linux more efficient on these processors, as intel_idle knows
+ * more than ACPI, as well as make Linux more immune to ACPI BIOS bugs.
+ */
+</code>
+&ndash; Driver Init.</p>
+
+<pre><code>* intel_idle_probe() starts to match current CPU with array of x86_cpu_ids via and assign corresponding default cpuidle C-state table  
+* intel_idle_cpuidle_driver_init() checks real C-state table and update its state when needed (eg, target_residency)
+* register the intel_dile driver with the cpudile subsystem through cpuidle_register_driver()  
+* intel_idle_cpu_init() allocates, initializes, and registers cpuidle_device for each CPU
+* register cpu_hotplug_notifer to know about CPUs going up/dow
+</code></pre>
+
+<p>``` c intel_idle_init()
+static int __init intel_idle_init(void)                                                                                           <br/>
+{</p>
+
+<pre><code>    int retval, i;
+
+    /* Do not load intel_idle at all for now if idle= is passed */
+    if (boot_option_idle_override != IDLE_NO_OVERRIDE)
+            return -ENODEV;
+
+    retval = intel_idle_probe();
+    if (retval)
+            return retval;
+
+    intel_idle_cpuidle_driver_init();
+    retval = cpuidle_register_driver(&amp;intel_idle_driver);
+    if (retval) {
+            struct cpuidle_driver *drv = cpuidle_get_driver();
+            printk(KERN_DEBUG PREFIX "intel_idle yielding to %s",
+                    drv ? drv-&gt;name : "none");
+            return retval;
+    }
+
+    intel_idle_cpuidle_devices = alloc_percpu(struct cpuidle_device);
+    if (intel_idle_cpuidle_devices == NULL)
+            return -ENOMEM;
+
+    for_each_online_cpu(i) {
+            retval = intel_idle_cpu_init(i);
+            if (retval) {
+                    cpuidle_unregister_driver(&amp;intel_idle_driver);
+                    return retval;
+            }
+
+            if (platform_is(INTEL_ATOM_BYT)) {
+                    /* Disable automatic core C6 demotion by PUNIT */
+                    if (wrmsr_on_cpu(i, CLPU_CR_C6_POLICY_CONFIG,
+                                    DISABLE_CORE_C6_DEMOTION, 0x0))
+                            pr_err("Error to disable core C6 demotion");
+                    /* Disable automatic module C6 demotion by PUNIT */
+                    if (wrmsr_on_cpu(i, CLPU_MD_C6_POLICY_CONFIG,
+                                    DISABLE_MODULE_C6_DEMOTION, 0x0))
+                            pr_err("Error to disable module C6 demotion");
+            }
+    }
+    register_cpu_notifier(&amp;cpu_hotplug_notifier);
+
+    return 0;
+</code></pre>
+
+<p>}
+```</p>
+
+<ul>
+<li>Default cpuidle C-states for merrifield
+
+<ul>
+<li>&ldquo;flags&rdquo; field describes the characteristics of this sleep state
+
+<ul>
+<li>CPUIDLE_FLAG_TIME_VALID should be set if it is possible to accurately measure the amount of time spent in this particular idle state.</li>
+<li>CPUIDLE_FLAG_TLB_FLUSHED is set to inidicate the HW flushes the TLB for this state.</li>
+<li>MWAIT takes an 8-bit &ldquo;hint&rdquo; in EAX &ldquo;suggesting&rdquo; the C-state (top nibble) and sub-state (bottom nibble). 0x00 means &ldquo;MWAIT(C1)&rdquo;, 0x10 means &ldquo;MWAIT(C2)&rdquo; etc.</li>
+</ul>
+</li>
+<li>&ldquo;exit_latency&rdquo; in US says how long it takes to get back to a fully functional state.</li>
+<li>&ldquo;target_residency&rdquo; in US is the minimum amount of time the processor should spend in this state to make the transition worth the effort.</li>
+<li>The &ldquo;enter()&rdquo; function will be called when the current governor decides to put the CPU into the given state<br/>
+``` c Merrifield CPUidle C states
+
+<h1>if defined(CONFIG_REMOVEME_INTEL_ATOM_MRFLD_POWER)</h1>
+
+static struct cpuidle_state mrfld_cstates[CPUIDLE_STATE_MAX] = {
+  { /<em> MWAIT C1 </em>/
+          .name = &ldquo;C1-ATM&rdquo;,
+          .desc = &ldquo;MWAIT 0x00&rdquo;,
+          .flags = MWAIT2flg(0x00) | CPUIDLE_FLAG_TIME_VALID,
+          .exit_latency = 1,
+          .target_residency = 4,
+          .enter = &amp;intel_idle },
+  { /<em> MWAIT C4 </em>/
+          .name = &ldquo;C4-ATM&rdquo;,
+          .desc = &ldquo;MWAIT 0x30&rdquo;,
+          .flags = MWAIT2flg(0x30) | CPUIDLE_FLAG_TIME_VALID | CPUIDLE_FLAG_TLB_FLUSHED,
+          .exit_latency = 100,
+          .target_residency = 400,
+          .enter = &amp;intel_idle },
+  { /<em> MWAIT C6 </em>/
+          .name = &ldquo;C6-ATM&rdquo;,
+          .desc = &ldquo;MWAIT 0x52&rdquo;,
+          .flags = MWAIT2flg(0x52) | CPUIDLE_FLAG_TIME_VALID | CPUIDLE_FLAG_TLB_FLUSHED,
+          .exit_latency = 140,
+          .target_residency = 560,
+          .enter = &amp;intel_idle },
+  { /<em> MWAIT C7-S0i1 </em>/
+          .name = &ldquo;S0i1-ATM&rdquo;,
+          .desc = &ldquo;MWAIT 0x60&rdquo;,
+          .flags = MWAIT2flg(0x60) | CPUIDLE_FLAG_TIME_VALID | CPUIDLE_FLAG_TLB_FLUSHED,
+          .exit_latency = 1200,
+          .target_residency = 4000,
+          .enter = &amp;intel_idle },
+  { /<em> MWAIT C9-S0i3 </em>/
+          .name = &ldquo;S0i3-ATM&rdquo;,
+          .desc = &ldquo;MWAIT 0x64&rdquo;,
+          .flags = MWAIT2flg(0x64) | CPUIDLE_FLAG_TIME_VALID | CPUIDLE_FLAG_TLB_FLUSHED,
+          .exit_latency = 10000,
+          .target_residency = 20000,
+          .enter = &amp;intel_idle },
+  {
+          .enter = NULL }
+};
+
+<h1>else</h1>
+
+<h1>define mrfld_cstates atom_cstates</h1>
+
+<h1>endif</h1></li>
+</ul>
+</li>
+</ul>
+
+
+<p>```
+The actual performs given C-state transitions implemented by intel_idle(). As we saw, this is done through &ldquo;enter()&rdquo; functions associated with each state. The decision as to which idle state makes sense in a given situation is very much a policy issue implemented by the cpuidle &ldquo;governors&rdquo;.</p>
+
+<p>A call to enter() is a request from the current governor to put the CPU associated with dev into the given state. Note that enter() is free to choose a different state if there is a good reason to do so, but it should store the actual state used in the device&rsquo;s last_state field.
+``` c intel_idle
+/<em><em>                                                                                                                               <br/>
+ * intel_idle
+ * @dev: cpuidle_device
+ * @drv: cpuidle driver
+ * @index: index of cpuidle state
+ *
+ * Must be called under local_irq_disable().
+ </em>/
+static int intel_idle(struct cpuidle_device </em>dev,</p>
+
+<pre><code>            struct cpuidle_driver *drv, int index)
+</code></pre>
+
+<p>{</p>
+
+<pre><code>    unsigned long ecx = 1; /* break on interrupt flag */
+    struct cpuidle_state *state = &amp;drv-&gt;states[index];
+    unsigned long eax = flg2MWAIT(state-&gt;flags);
+    unsigned int cstate;
+    int cpu = smp_processor_id();
+</code></pre>
+
+<h1>if (defined(CONFIG_REMOVEME_INTEL_ATOM_MRFLD_POWER) &amp;&amp; \</h1>
+
+<pre><code>    defined(CONFIG_PM_DEBUG))
+    {
+            /* Get Cstate based on ignore table from PMU driver */
+            unsigned int ncstate;
+            cstate =
+            (((eax) &gt;&gt; MWAIT_SUBSTATE_SIZE) &amp; MWAIT_CSTATE_MASK) + 1;
+            ncstate = pmu_get_new_cstate(cstate, &amp;index);
+            eax     = flg2MWAIT(drv-&gt;states[index].flags);
+    }
+</code></pre>
+
+<h1>endif</h1>
+
+<pre><code>    cstate = (((eax) &gt;&gt; MWAIT_SUBSTATE_SIZE) &amp; MWAIT_CSTATE_MASK) + 1;
+
+    /*
+     * leave_mm() to avoid costly and often unnecessary wakeups
+     * for flushing the user TLB's associated with the active mm.
+     */
+    if (state-&gt;flags &amp; CPUIDLE_FLAG_TLB_FLUSHED)
+            leave_mm(cpu);
+
+    if (!(lapic_timer_reliable_states &amp; (1 &lt;&lt; (cstate))))
+            clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_ENTER, &amp;cpu);
+
+    if (!need_resched()) {
+
+            __monitor((void *)&amp;current_thread_info()-&gt;flags, 0, 0);
+            smp_mb();
+            if (!need_resched())
+                    __mwait(eax, ecx);
+</code></pre>
+
+<h1>if defined(CONFIG_REMOVEME_INTEL_ATOM_MDFLD_POWER) || \</h1>
+
+<pre><code>    defined(CONFIG_REMOVEME_INTEL_ATOM_CLV_POWER)
+            if (!need_resched() &amp;&amp; is_irq_pending() == 0)
+                    __get_cpu_var(update_buckets) = 0;
+</code></pre>
+
+<h1>endif</h1>
+
+<pre><code>    }
+
+    if (!(lapic_timer_reliable_states &amp; (1 &lt;&lt; (cstate))))
+            clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &amp;cpu);
+
+    return index;
+</code></pre>
+
+<p>}</p>
+
+<p>```</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Intel_mid: Android power management flow for suspend/resume using S0i3 implementation]]></title>
+    <link href="http://pyeh.github.io/blog/2013/12/04/intel-mid-android-power-management-flow-for-suspend-slash-resume-using-s0i3-implementation/"/>
+    <updated>2013-12-04T11:19:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/12/04/intel-mid-android-power-management-flow-for-suspend-slash-resume-using-s0i3-implementation</id>
+    <content type="html"><![CDATA[<p>The main PMU driver (arch/x86/platform/intel-mid/intel_soc_pmu.c) hooks to support Linux PM suspend/resume flows as follows.<br/>
+The S0ix states are low-power active idle states that platform can be transitioned into.
+&ndash; Register PMU driver as PCI device<br/>
+The PMU driver registers mid_suspend_ops via suspend_set_ops().
+```c mid_pci_register_init
+/<em>*
+ * mid_pci_register_init &ndash; register the PMU driver as PCI device
+ </em>/
+static struct pci_driver driver = {</p>
+
+<pre><code>    .name = PMU_DRV_NAME,
+    .id_table = mid_pm_ids,
+    .probe = mid_pmu_probe,
+    .remove = mid_pmu_remove,
+    .shutdown = mid_pmu_shutdown
+</code></pre>
+
+<p>};</p>
+
+<p>static int __init mid_pci_register_init(void)
+{</p>
+
+<pre><code>    int ret;
+
+    mid_pmu_cxt = kzalloc(sizeof(struct mid_pmu_dev), GFP_KERNEL);
+
+    if (mid_pmu_cxt == NULL)
+            return -ENOMEM;
+
+    mid_pmu_cxt-&gt;s3_restrict_qos =
+            kzalloc(sizeof(struct pm_qos_request), GFP_KERNEL);
+    if (mid_pmu_cxt-&gt;s3_restrict_qos) {
+            pm_qos_add_request(mid_pmu_cxt-&gt;s3_restrict_qos,
+                     PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
+    } else {
+            return -ENOMEM;
+    }
+
+    init_nc_device_states();
+
+    mid_pmu_cxt-&gt;nc_restrict_qos =
+            kzalloc(sizeof(struct pm_qos_request), GFP_KERNEL);
+    if (mid_pmu_cxt-&gt;nc_restrict_qos == NULL)
+            return -ENOMEM;
+
+    /* initialize the semaphores */
+    sema_init(&amp;mid_pmu_cxt-&gt;scu_ready_sem, 1);
+
+    /* registering PCI device */
+    ret = pci_register_driver(&amp;driver);
+    suspend_set_ops(&amp;mid_suspend_ops);
+
+    return ret;
+</code></pre>
+
+<p>}
+<code>
+- mid_suspend_enter() performs the required S3 state over standby_enter()  
+check_nc_sc_status() hooked by mrfld_nc_sc_status_check (defind at arch/x86/platform/intel-mid/intel_soc_mrfld.c) is to check north complex (NC) and soutch complex (SC) device status. Return true if all NC and SC devices are in D0i3.
+</code> c mid_suspend_enter()
+static const struct platform_suspend_ops mid_suspend_ops = {</p>
+
+<pre><code>    .begin = mid_suspend_begin,
+    .valid = mid_suspend_valid,
+    .prepare = mid_suspend_prepare,
+    .prepare_late = mid_suspend_prepare_late,
+    .enter = mid_suspend_enter,
+    .end = mid_suspend_end,
+</code></pre>
+
+<p>};</p>
+
+<p>static int mid_suspend_enter(suspend_state_t state)                                                                               <br/>
+{</p>
+
+<pre><code>    int ret;
+
+    if (state != PM_SUSPEND_MEM)
+            return -EINVAL;
+
+    /* one last check before entering standby */
+    if (pmu_ops-&gt;check_nc_sc_status) {
+            if (!(pmu_ops-&gt;check_nc_sc_status())) {
+                    trace_printk("Device d0ix status check failed! Aborting Standby entry!\n");
+                    WARN_ON(1);
+            }
+    }
+
+    trace_printk("s3_entry\n");
+    ret = standby_enter();
+    trace_printk("s3_exit %d\n", ret);
+    if (ret != 0)
+            dev_dbg(&amp;mid_pmu_cxt-&gt;pmu_dev-&gt;dev,
+                            "Failed to enter S3 status: %d\n", ret);
+
+    return ret;
+</code></pre>
+
+<p>}</p>
+
+<p>```</p>
+
+<ul>
+<li>standby_enter() performs requried S3 state
+
+<ul>
+<li>mid_state_to_sys_state() maps power states to driver&rsquo;s internal indexes.</li>
+<li>mid_s01x_enter() performs required S3 state</li>
+<li>__mwait(mid_pmu_cxt->s3_hint, 1) is issued with a hint to enter S0i3(S3 emulation using S0i3, as I observed that MRFLD_S3_HINT with 0x64 is same as MID_S0I3_STATE with 0x64). When both core issue an mwait C7, it is a hint provided by the idle driver to enter an S0ix state.</li>
+<li><p>This triggers S0i3 entry, but the decision and policy is selected by SCU FW.
+``` c standby_enter()
+static int standby_enter(void)
+{
+  u32 temp = 0;
+  int s3_state = mid_state_to_sys_state(MID_S3_STATE);</p>
+
+<p>  if (mid_s0ix_enter(MID_S3_STATE) != MID_S3_STATE) {
+          pmu_set_s0ix_complete();
+          return -EINVAL;
+  }</p>
+
+<p>  /<em> time stamp for end of s3 entry </em>/
+  time_stamp_for_sleep_state_latency(s3_state, false, true);</p>
+
+<p>  <strong>monitor((void *) &amp;temp, 0, 0);
+  smp_mb();
+  </strong>mwait(mid_pmu_cxt->s3_hint, 1);</p>
+
+<p>  /<em> time stamp for start of s3 exit </em>/
+  time_stamp_for_sleep_state_latency(s3_state, true, false);</p>
+
+<p>  pmu_set_s0ix_complete();</p>
+
+<p>  /<em>set wkc to appropriate value suitable for s0ix</em>/
+  writel(mid_pmu_cxt->ss_config->wake_state.wake_enable[0],
+                 &amp;mid_pmu_cxt->pmu_reg->pm_wkc[0]);
+  writel(mid_pmu_cxt->ss_config->wake_state.wake_enable[1],
+                 &amp;mid_pmu_cxt->pmu_reg->pm_wkc[1]);</p>
+
+<p>  mid_pmu_cxt->camera_off = 0;
+  mid_pmu_cxt->display_off = 0;</p>
+
+<p>  if (platform_is(INTEL_ATOM_MRFLD))
+          up(&amp;mid_pmu_cxt->scu_ready_sem);</p>
+
+<p>  return 0;
+}
+```</p></li>
+</ul>
+</li>
+<li>mid_s01x_enter()
+
+<ul>
+<li>pmu_prepare_wake() will mask wakeup from AONT timers for s3. If s3 is aborted for any reason, we don&rsquo;t want to leave AONT timers masked until next suspend, otherwise if next to happen is s0ix, no timer could wakeup SoC from s0ix and we might miss to kick the kernel watchdog.</li>
+<li><p>enter() hooked by mrfld_pmu_enter (defined at arch/x86/platform/intel-mid/intel_soc_mrfld.c). Compared to Medfield and Covertail platform, PM_CMD is not required to send to SCU.
+``` c mid_s01x_enter()
+int mid_s0ix_enter(int s0ix_state)
+{
+  int ret = 0;</p>
+
+<p>  if (unlikely(!pmu_ops || !pmu_ops->enter))
+          goto ret;</p>
+
+<p>  /* check if we can acquire scu_ready_sem</p>
+
+<ul>
+<li> if we are not able to then do a c6 */
+if (down_trylock(&amp;mid_pmu_cxt->scu_ready_sem))
+      goto ret;</li>
+</ul>
+
+
+<p>  /<em> If PMU is busy, we&rsquo;ll retry on next C6 </em>/
+  if (unlikely(_pmu_read_status(PMU_BUSY_STATUS))) {
+          up(&amp;mid_pmu_cxt->scu_ready_sem);
+          pr_debug(&ldquo;mid_pmu_cxt->scu_read_sem is up\n&rdquo;);
+          goto ret;
+  }</p>
+
+<p>  pmu_prepare_wake(s0ix_state);</p>
+
+<p>  /<em> no need to proceed if schedule pending </em>/
+  if (unlikely(need_resched())) {
+          pmu_stat_clear();
+          up(&amp;mid_pmu_cxt->scu_ready_sem);
+          goto ret;
+  }</p>
+
+<p>  /<em> entry function for pmu driver ops </em>/
+  if (pmu_ops->enter(s0ix_state))
+          ret = s0ix_state;</p></li>
+</ul>
+</li>
+</ul>
+
+
+<p>ret:</p>
+
+<pre><code>    return ret;
+</code></pre>
+
+<p>}</p>
+
+<p>```</p>
+]]></content>
+  </entry>
+  
+</feed>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: firmware | Paris Blog]]></title>
+  <link href="http://pyeh.github.io/blog/categories/firmware/atom.xml" rel="self"/>
+  <link href="http://pyeh.github.io/"/>
+  <updated>2013-12-09T19:40:29+08:00</updated>
+  <id>http://pyeh.github.io/</id>
+  <author>
+    <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[intel_mid: Overview of Simple Platform Interface]]></title>
+    <link href="http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/"/>
+    <updated>2013-11-27T15:40:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface</id>
+    <content type="html"><![CDATA[<p>Start to develop android kernel under X86 MID platform, merrifield.
+I am a newbie for porting kernel to Atom-based platform but am familiar with linux kernel and device drivers.
+Noticed that Intel Android BSP introudes Simple Firmware Interface (SFI) a method for platform firmware to export
+static tables (I2C, SPI, GPIO) to the operation system.</p>
+
+<p>Intel&rsquo;s newer Atom processors support SFI since &ldquo;Moorestown&rdquo; SoC and SFI implementation was merged into upstream kernel 2.6.32(<a href="http://lwn.net/Articles/340476">http://lwn.net/Articles/340476</a>)</p>
+
+<p>Actually, below link descrbies the SFI and explains how does SFI related to ACPI and UEFI.
+<a href="https://simplefirmware.org/faq">https://simplefirmware.org/faq</a></p>
+
+<p>Besides, below patch sets are to refactor existing code and implement a flexible way to support multiple boards and devices.
+<a href="https://lkml.org/lkml/2013/10/10/81">https://lkml.org/lkml/2013/10/10/81</a></p>
+
+<p>/arch/x86/platform/intel-mid/intel_mid_sfi.c is SFI parsing implementation, and let me understand how get_gpio_by_name() works.</p>
+]]></content>
+  </entry>
+  
+</feed>

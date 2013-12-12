@@ -1,0 +1,1267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Paris Blog]]></title>
+  <link href="http://pyeh.github.io/atom.xml" rel="self"/>
+  <link href="http://pyeh.github.io/"/>
+  <updated>2013-12-09T19:40:29+08:00</updated>
+  <id>http://pyeh.github.io/</id>
+  <author>
+    <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Intel_mid: CPUIDLE: Intel_idle processor driver and new C-States]]></title>
+    <link href="http://pyeh.github.io/blog/2013/12/06/intel-mid-cpuidle-intel-idle-processor-driver-and-new-c-states/"/>
+    <updated>2013-12-06T17:34:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/12/06/intel-mid-cpuidle-intel-idle-processor-driver-and-new-c-states</id>
+    <content type="html"><![CDATA[<p>When there is nothing left to do, the CPUs will go into the idle state to wait until it is needed again. These idle modes, which go by names like &ldquo;C states,&rdquo; vary in the amount of power saved, but also in the amount of ancillary information which may be lost and the amount of time required to get back into a fully-functional mode.</p>
+
+<p>Intel_idle driver actually performs idle state power management, and regsiters into existing CPU Idle subsystem and extends driver for Merrifield CPU (Slivermont). It also introduces a new platform idle states C7x deeper than traditional C6 state. The overall idea is that CPU C7x-states are extended to devices and rest of the platform, hence puting the platform to S0ix states.</p>
+
+<p>On intel mid platform (Merrifield), the PMU driver communicates with the Intel_idle driver, platform device drivers, pci drivers, and the PMU firmwares (NC: Punit, SC:SCU) to coordinate platform power state transitions.</p>
+
+<ol>
+<li><p>The PMU driver provides a platform-specific callback to the Intel_idle driver so that long periods of idleness can be extended to the entire platform.</p>
+
+<ul>
+<li>soc_s0ix_idle()&ndash;>enter_s0ix_state() // intel_idle driver defined at /drivers/idle/intel_idle.c</li>
+<li>mid_s0ix_enter()            // PMU driver defined at /arch/x86/platform/intel-mid/intel_soc_pmu.c</li>
+</ul>
+
+
+<p> I could find out cpuidle_state->.enter() associated with soc_s0ix_idle() for C6 state on medfield platform, and the call stack looks like as above shown. However, I don&rsquo;t figure out the similar assoication between intel_idle and pmu driver on merrifield platform. I am curious if this statement is also appliciable on merrifield platform ??</p></li>
+<li><p>Based on hint of idleness, the PMU driver extends CPU idleness to the reset of the platform via standard Linux PM_QoS, Runtime PM, and PCI PM calls.</p></li>
+<li><p>Once the CPU and devices are all idle, the PMU driver programs the North and South Complex PMUs to implement the required power transitiion for S0ix to eumlate C7-x states.</p></li>
+</ol>
+
+
+<p>Here is very good reference to understand the cpuidle governor and subsystem
+<a href="http://lwn.net/Articles/384146/">http://lwn.net/Articles/384146/</a> before digging into how intel_idle driver fits with current cpuilde intrastructure.</p>
+
+<p>The below is code trace for intel_idle driver located at &ldquo;/drivers/idle/intel_idle.c&rdquo;
+&ndash; Comment in intel_idle driver</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>/*
+</span><span class='line'> * intel_idle is a cpuidle driver that loads on specific Intel processors
+</span><span class='line'> * in lieu of the legacy ACPI processor_idle driver.  The intent is to
+</span><span class='line'> * make Linux more efficient on these processors, as intel_idle knows
+</span><span class='line'> * more than ACPI, as well as make Linux more immune to ACPI BIOS bugs.
+</span><span class='line'> */</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>Driver Init.
+
+<ul>
+<li>intel_idle_probe() starts to match current CPU with array of x86_cpu_ids via and assign corresponding default cpuidle C-state table</li>
+<li>intel_idle_cpuidle_driver_init() checks real C-state table and update its state when needed (eg, target_residency)</li>
+<li>register the intel_dile driver with the cpudile subsystem through cpuidle_register_driver()</li>
+<li>intel_idle_cpu_init() allocates, initializes, and registers cpuidle_device for each CPU</li>
+<li>register cpu_hotplug_notifer to know about CPUs going up/dow</li>
+</ul>
+</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>intel_idle_init()</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="n">__init</span> <span class="nf">intel_idle_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">retval</span><span class="p">,</span> <span class="n">i</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Do not load intel_idle at all for now if idle= is passed */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">boot_option_idle_override</span> <span class="o">!=</span> <span class="n">IDLE_NO_OVERRIDE</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">ENODEV</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">retval</span> <span class="o">=</span> <span class="n">intel_idle_probe</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">retval</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">retval</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">intel_idle_cpuidle_driver_init</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">retval</span> <span class="o">=</span> <span class="n">cpuidle_register_driver</span><span class="p">(</span><span class="o">&amp;</span><span class="n">intel_idle_driver</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">retval</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">struct</span> <span class="n">cpuidle_driver</span> <span class="o">*</span><span class="n">drv</span> <span class="o">=</span> <span class="n">cpuidle_get_driver</span><span class="p">();</span>
+</span><span class='line'>                <span class="n">printk</span><span class="p">(</span><span class="n">KERN_DEBUG</span> <span class="n">PREFIX</span> <span class="s">&quot;intel_idle yielding to %s&quot;</span><span class="p">,</span>
+</span><span class='line'>                        <span class="n">drv</span> <span class="o">?</span> <span class="n">drv</span><span class="o">-&gt;</span><span class="n">name</span> <span class="o">:</span> <span class="s">&quot;none&quot;</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">retval</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">intel_idle_cpuidle_devices</span> <span class="o">=</span> <span class="n">alloc_percpu</span><span class="p">(</span><span class="k">struct</span> <span class="n">cpuidle_device</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">intel_idle_cpuidle_devices</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">ENOMEM</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">for_each_online_cpu</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">retval</span> <span class="o">=</span> <span class="n">intel_idle_cpu_init</span><span class="p">(</span><span class="n">i</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">retval</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">cpuidle_unregister_driver</span><span class="p">(</span><span class="o">&amp;</span><span class="n">intel_idle_driver</span><span class="p">);</span>
+</span><span class='line'>                        <span class="k">return</span> <span class="n">retval</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">platform_is</span><span class="p">(</span><span class="n">INTEL_ATOM_BYT</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="cm">/* Disable automatic core C6 demotion by PUNIT */</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="p">(</span><span class="n">wrmsr_on_cpu</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">CLPU_CR_C6_POLICY_CONFIG</span><span class="p">,</span>
+</span><span class='line'>                                        <span class="n">DISABLE_CORE_C6_DEMOTION</span><span class="p">,</span> <span class="mh">0x0</span><span class="p">))</span>
+</span><span class='line'>                                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;Error to disable core C6 demotion&quot;</span><span class="p">);</span>
+</span><span class='line'>                        <span class="cm">/* Disable automatic module C6 demotion by PUNIT */</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="p">(</span><span class="n">wrmsr_on_cpu</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">CLPU_MD_C6_POLICY_CONFIG</span><span class="p">,</span>
+</span><span class='line'>                                        <span class="n">DISABLE_MODULE_C6_DEMOTION</span><span class="p">,</span> <span class="mh">0x0</span><span class="p">))</span>
+</span><span class='line'>                                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;Error to disable module C6 demotion&quot;</span><span class="p">);</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="n">register_cpu_notifier</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cpu_hotplug_notifier</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p></p>
+
+<ul>
+<li>Default cpuidle C-states for merrifield
+
+<ul>
+<li>&ldquo;flags&rdquo; field describes the characteristics of this sleep state
+
+<ul>
+<li>CPUIDLE_FLAG_TIME_VALID should be set if it is possible to accurately measure the amount of time spent in this particular idle state.</li>
+<li>CPUIDLE_FLAG_TLB_FLUSHED is set to inidicate the HW flushes the TLB for this state.</li>
+<li>MWAIT takes an 8-bit &ldquo;hint&rdquo; in EAX &ldquo;suggesting&rdquo; the C-state (top nibble) and sub-state (bottom nibble). 0x00 means &ldquo;MWAIT(C1)&rdquo;, 0x10 means &ldquo;MWAIT(C2)&rdquo; etc.</li>
+</ul>
+</li>
+<li>&ldquo;exit_latency&rdquo; in US says how long it takes to get back to a fully functional state.</li>
+<li>&ldquo;target_residency&rdquo; in US is the minimum amount of time the processor should spend in this state to make the transition worth the effort.</li>
+<li>The &ldquo;enter()&rdquo; function will be called when the current governor decides to put the CPU into the given state</li>
+</ul>
+</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>Merrifield CPUidle C states</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cp">#if defined(CONFIG_REMOVEME_INTEL_ATOM_MRFLD_POWER)</span>
+</span><span class='line'><span class="k">static</span> <span class="k">struct</span> <span class="n">cpuidle_state</span> <span class="n">mrfld_cstates</span><span class="p">[</span><span class="n">CPUIDLE_STATE_MAX</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">{</span> <span class="cm">/* MWAIT C1 */</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;C1-ATM&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">desc</span> <span class="o">=</span> <span class="s">&quot;MWAIT 0x00&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">flags</span> <span class="o">=</span> <span class="n">MWAIT2flg</span><span class="p">(</span><span class="mh">0x00</span><span class="p">)</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TIME_VALID</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">exit_latency</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">target_residency</span> <span class="o">=</span> <span class="mi">4</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">enter</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_idle</span> <span class="p">},</span>
+</span><span class='line'>        <span class="p">{</span> <span class="cm">/* MWAIT C4 */</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;C4-ATM&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">desc</span> <span class="o">=</span> <span class="s">&quot;MWAIT 0x30&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">flags</span> <span class="o">=</span> <span class="n">MWAIT2flg</span><span class="p">(</span><span class="mh">0x30</span><span class="p">)</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TIME_VALID</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TLB_FLUSHED</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">exit_latency</span> <span class="o">=</span> <span class="mi">100</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">target_residency</span> <span class="o">=</span> <span class="mi">400</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">enter</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_idle</span> <span class="p">},</span>
+</span><span class='line'>        <span class="p">{</span> <span class="cm">/* MWAIT C6 */</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;C6-ATM&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">desc</span> <span class="o">=</span> <span class="s">&quot;MWAIT 0x52&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">flags</span> <span class="o">=</span> <span class="n">MWAIT2flg</span><span class="p">(</span><span class="mh">0x52</span><span class="p">)</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TIME_VALID</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TLB_FLUSHED</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">exit_latency</span> <span class="o">=</span> <span class="mi">140</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">target_residency</span> <span class="o">=</span> <span class="mi">560</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">enter</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_idle</span> <span class="p">},</span>
+</span><span class='line'>        <span class="p">{</span> <span class="cm">/* MWAIT C7-S0i1 */</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;S0i1-ATM&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">desc</span> <span class="o">=</span> <span class="s">&quot;MWAIT 0x60&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">flags</span> <span class="o">=</span> <span class="n">MWAIT2flg</span><span class="p">(</span><span class="mh">0x60</span><span class="p">)</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TIME_VALID</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TLB_FLUSHED</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">exit_latency</span> <span class="o">=</span> <span class="mi">1200</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">target_residency</span> <span class="o">=</span> <span class="mi">4000</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">enter</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_idle</span> <span class="p">},</span>
+</span><span class='line'>        <span class="p">{</span> <span class="cm">/* MWAIT C9-S0i3 */</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;S0i3-ATM&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">desc</span> <span class="o">=</span> <span class="s">&quot;MWAIT 0x64&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">flags</span> <span class="o">=</span> <span class="n">MWAIT2flg</span><span class="p">(</span><span class="mh">0x64</span><span class="p">)</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TIME_VALID</span> <span class="o">|</span> <span class="n">CPUIDLE_FLAG_TLB_FLUSHED</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">exit_latency</span> <span class="o">=</span> <span class="mi">10000</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">target_residency</span> <span class="o">=</span> <span class="mi">20000</span><span class="p">,</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">enter</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_idle</span> <span class="p">},</span>
+</span><span class='line'>        <span class="p">{</span>
+</span><span class='line'>                <span class="p">.</span><span class="n">enter</span> <span class="o">=</span> <span class="nb">NULL</span> <span class="p">}</span>
+</span><span class='line'><span class="p">};</span>
+</span><span class='line'><span class="cp">#else</span>
+</span><span class='line'><span class="cp">#define mrfld_cstates atom_cstates</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>The actual performs given C-state transitions implemented by intel_idle(). As we saw, this is done through &ldquo;enter()&rdquo; functions associated with each state. The decision as to which idle state makes sense in a given situation is very much a policy issue implemented by the cpuidle &ldquo;governors&rdquo;.</p>
+
+<p>A call to enter() is a request from the current governor to put the CPU associated with dev into the given state. Note that enter() is free to choose a different state if there is a good reason to do so, but it should store the actual state used in the device&rsquo;s last_state field.</p>
+
+<figure class='code'><figcaption><span>intel_idle</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**                                                                                                                                 </span>
+</span><span class='line'><span class="cm"> * intel_idle</span>
+</span><span class='line'><span class="cm"> * @dev: cpuidle_device</span>
+</span><span class='line'><span class="cm"> * @drv: cpuidle driver</span>
+</span><span class='line'><span class="cm"> * @index: index of cpuidle state</span>
+</span><span class='line'><span class="cm"> *</span>
+</span><span class='line'><span class="cm"> * Must be called under local_irq_disable().</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">intel_idle</span><span class="p">(</span><span class="k">struct</span> <span class="n">cpuidle_device</span> <span class="o">*</span><span class="n">dev</span><span class="p">,</span>
+</span><span class='line'>                <span class="k">struct</span> <span class="n">cpuidle_driver</span> <span class="o">*</span><span class="n">drv</span><span class="p">,</span> <span class="kt">int</span> <span class="n">index</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">ecx</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span> <span class="cm">/* break on interrupt flag */</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">cpuidle_state</span> <span class="o">*</span><span class="n">state</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">drv</span><span class="o">-&gt;</span><span class="n">states</span><span class="p">[</span><span class="n">index</span><span class="p">];</span>
+</span><span class='line'>        <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">eax</span> <span class="o">=</span> <span class="n">flg2MWAIT</span><span class="p">(</span><span class="n">state</span><span class="o">-&gt;</span><span class="n">flags</span><span class="p">);</span>
+</span><span class='line'>        <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">cstate</span><span class="p">;</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">cpu</span> <span class="o">=</span> <span class="n">smp_processor_id</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#if (defined(CONFIG_REMOVEME_INTEL_ATOM_MRFLD_POWER) &amp;&amp; \</span>
+</span><span class='line'><span class="cp">        defined(CONFIG_PM_DEBUG))</span>
+</span><span class='line'>        <span class="p">{</span>
+</span><span class='line'>                <span class="cm">/* Get Cstate based on ignore table from PMU driver */</span>
+</span><span class='line'>                <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">ncstate</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">cstate</span> <span class="o">=</span>
+</span><span class='line'>                <span class="p">(((</span><span class="n">eax</span><span class="p">)</span> <span class="o">&gt;&gt;</span> <span class="n">MWAIT_SUBSTATE_SIZE</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">MWAIT_CSTATE_MASK</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">ncstate</span> <span class="o">=</span> <span class="n">pmu_get_new_cstate</span><span class="p">(</span><span class="n">cstate</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">index</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">eax</span>     <span class="o">=</span> <span class="n">flg2MWAIT</span><span class="p">(</span><span class="n">drv</span><span class="o">-&gt;</span><span class="n">states</span><span class="p">[</span><span class="n">index</span><span class="p">].</span><span class="n">flags</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>        <span class="n">cstate</span> <span class="o">=</span> <span class="p">(((</span><span class="n">eax</span><span class="p">)</span> <span class="o">&gt;&gt;</span> <span class="n">MWAIT_SUBSTATE_SIZE</span><span class="p">)</span> <span class="o">&amp;</span> <span class="n">MWAIT_CSTATE_MASK</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/*</span>
+</span><span class='line'><span class="cm">         * leave_mm() to avoid costly and often unnecessary wakeups</span>
+</span><span class='line'><span class="cm">         * for flushing the user TLB&#39;s associated with the active mm.</span>
+</span><span class='line'><span class="cm">         */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">state</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CPUIDLE_FLAG_TLB_FLUSHED</span><span class="p">)</span>
+</span><span class='line'>                <span class="n">leave_mm</span><span class="p">(</span><span class="n">cpu</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">lapic_timer_reliable_states</span> <span class="o">&amp;</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="p">(</span><span class="n">cstate</span><span class="p">))))</span>
+</span><span class='line'>                <span class="n">clockevents_notify</span><span class="p">(</span><span class="n">CLOCK_EVT_NOTIFY_BROADCAST_ENTER</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cpu</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">need_resched</span><span class="p">())</span> <span class="p">{</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="n">__monitor</span><span class="p">((</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span><span class="o">&amp;</span><span class="n">current_thread_info</span><span class="p">()</span><span class="o">-&gt;</span><span class="n">flags</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">smp_mb</span><span class="p">();</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">need_resched</span><span class="p">())</span>
+</span><span class='line'>                        <span class="n">__mwait</span><span class="p">(</span><span class="n">eax</span><span class="p">,</span> <span class="n">ecx</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#if defined(CONFIG_REMOVEME_INTEL_ATOM_MDFLD_POWER) || \</span>
+</span><span class='line'><span class="cp">        defined(CONFIG_REMOVEME_INTEL_ATOM_CLV_POWER)</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">need_resched</span><span class="p">()</span> <span class="o">&amp;&amp;</span> <span class="n">is_irq_pending</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">__get_cpu_var</span><span class="p">(</span><span class="n">update_buckets</span><span class="p">)</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">lapic_timer_reliable_states</span> <span class="o">&amp;</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="p">(</span><span class="n">cstate</span><span class="p">))))</span>
+</span><span class='line'>                <span class="n">clockevents_notify</span><span class="p">(</span><span class="n">CLOCK_EVT_NOTIFY_BROADCAST_EXIT</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cpu</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">index</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Intel_mid: Android power management flow for suspend/resume using S0i3 implementation]]></title>
+    <link href="http://pyeh.github.io/blog/2013/12/04/intel-mid-android-power-management-flow-for-suspend-slash-resume-using-s0i3-implementation/"/>
+    <updated>2013-12-04T11:19:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/12/04/intel-mid-android-power-management-flow-for-suspend-slash-resume-using-s0i3-implementation</id>
+    <content type="html"><![CDATA[<p>The main PMU driver (arch/x86/platform/intel-mid/intel_soc_pmu.c) hooks to support Linux PM suspend/resume flows as follows.<br/>
+The S0ix states are low-power active idle states that platform can be transitioned into.
+&ndash; Register PMU driver as PCI device<br/>
+The PMU driver registers mid_suspend_ops via suspend_set_ops().</p>
+
+<figure class='code'><figcaption><span>mid_pci_register_init </span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/**</span>
+</span><span class='line'><span class="cm"> * mid_pci_register_init - register the PMU driver as PCI device</span>
+</span><span class='line'><span class="cm"> */</span>
+</span><span class='line'><span class="k">static</span> <span class="k">struct</span> <span class="n">pci_driver</span> <span class="n">driver</span> <span class="o">=</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">PMU_DRV_NAME</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">id_table</span> <span class="o">=</span> <span class="n">mid_pm_ids</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">probe</span> <span class="o">=</span> <span class="n">mid_pmu_probe</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">remove</span> <span class="o">=</span> <span class="n">mid_pmu_remove</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">shutdown</span> <span class="o">=</span> <span class="n">mid_pmu_shutdown</span>
+</span><span class='line'><span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="n">__init</span> <span class="nf">mid_pci_register_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">mid_pmu_cxt</span> <span class="o">=</span> <span class="n">kzalloc</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">mid_pmu_dev</span><span class="p">),</span> <span class="n">GFP_KERNEL</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">mid_pmu_cxt</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">ENOMEM</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">s3_restrict_qos</span> <span class="o">=</span>
+</span><span class='line'>                <span class="n">kzalloc</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">pm_qos_request</span><span class="p">),</span> <span class="n">GFP_KERNEL</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">s3_restrict_qos</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pm_qos_add_request</span><span class="p">(</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">s3_restrict_qos</span><span class="p">,</span>
+</span><span class='line'>                         <span class="n">PM_QOS_CPU_DMA_LATENCY</span><span class="p">,</span> <span class="n">PM_QOS_DEFAULT_VALUE</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">ENOMEM</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">init_nc_device_states</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">nc_restrict_qos</span> <span class="o">=</span>
+</span><span class='line'>                <span class="n">kzalloc</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">pm_qos_request</span><span class="p">),</span> <span class="n">GFP_KERNEL</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">nc_restrict_qos</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">ENOMEM</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* initialize the semaphores */</span>
+</span><span class='line'>        <span class="n">sema_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">scu_ready_sem</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* registering PCI device */</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">pci_register_driver</span><span class="p">(</span><span class="o">&amp;</span><span class="n">driver</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">suspend_set_ops</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mid_suspend_ops</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>mid_suspend_enter() performs the required S3 state over standby_enter()<br/>
+check_nc_sc_status() hooked by mrfld_nc_sc_status_check (defind at arch/x86/platform/intel-mid/intel_soc_mrfld.c) is to check north complex (NC) and soutch complex (SC) device status. Return true if all NC and SC devices are in D0i3.</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>mid_suspend_enter() </span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="k">const</span> <span class="k">struct</span> <span class="n">platform_suspend_ops</span> <span class="n">mid_suspend_ops</span> <span class="o">=</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">begin</span> <span class="o">=</span> <span class="n">mid_suspend_begin</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">valid</span> <span class="o">=</span> <span class="n">mid_suspend_valid</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">prepare</span> <span class="o">=</span> <span class="n">mid_suspend_prepare</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">prepare_late</span> <span class="o">=</span> <span class="n">mid_suspend_prepare_late</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">enter</span> <span class="o">=</span> <span class="n">mid_suspend_enter</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">end</span> <span class="o">=</span> <span class="n">mid_suspend_end</span><span class="p">,</span>
+</span><span class='line'><span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">mid_suspend_enter</span><span class="p">(</span><span class="n">suspend_state_t</span> <span class="n">state</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">state</span> <span class="o">!=</span> <span class="n">PM_SUSPEND_MEM</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">EINVAL</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* one last check before entering standby */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">pmu_ops</span><span class="o">-&gt;</span><span class="n">check_nc_sc_status</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">pmu_ops</span><span class="o">-&gt;</span><span class="n">check_nc_sc_status</span><span class="p">()))</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">trace_printk</span><span class="p">(</span><span class="s">&quot;Device d0ix status check failed! Aborting Standby entry!</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>                        <span class="n">WARN_ON</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">trace_printk</span><span class="p">(</span><span class="s">&quot;s3_entry</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">standby_enter</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">trace_printk</span><span class="p">(</span><span class="s">&quot;s3_exit %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                <span class="n">dev_dbg</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">pmu_dev</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span>
+</span><span class='line'>                                <span class="s">&quot;Failed to enter S3 status: %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>standby_enter() performs requried S3 state
+
+<ul>
+<li>mid_state_to_sys_state() maps power states to driver&rsquo;s internal indexes.</li>
+<li>mid_s01x_enter() performs required S3 state</li>
+<li>__mwait(mid_pmu_cxt->s3_hint, 1) is issued with a hint to enter S0i3(S3 emulation using S0i3, as I observed that MRFLD_S3_HINT with 0x64 is same as MID_S0I3_STATE with 0x64). When both core issue an mwait C7, it is a hint provided by the idle driver to enter an S0ix state.</li>
+<li>This triggers S0i3 entry, but the decision and policy is selected by SCU FW.</li>
+</ul>
+</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>standby_enter()</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">standby_enter</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="n">u32</span> <span class="n">temp</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">s3_state</span> <span class="o">=</span> <span class="n">mid_state_to_sys_state</span><span class="p">(</span><span class="n">MID_S3_STATE</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">mid_s0ix_enter</span><span class="p">(</span><span class="n">MID_S3_STATE</span><span class="p">)</span> <span class="o">!=</span> <span class="n">MID_S3_STATE</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pmu_set_s0ix_complete</span><span class="p">();</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">EINVAL</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* time stamp for end of s3 entry */</span>
+</span><span class='line'>        <span class="n">time_stamp_for_sleep_state_latency</span><span class="p">(</span><span class="n">s3_state</span><span class="p">,</span> <span class="nb">false</span><span class="p">,</span> <span class="nb">true</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">__monitor</span><span class="p">((</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span> <span class="o">&amp;</span><span class="n">temp</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">smp_mb</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">__mwait</span><span class="p">(</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">s3_hint</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* time stamp for start of s3 exit */</span>
+</span><span class='line'>        <span class="n">time_stamp_for_sleep_state_latency</span><span class="p">(</span><span class="n">s3_state</span><span class="p">,</span> <span class="nb">true</span><span class="p">,</span> <span class="nb">false</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">pmu_set_s0ix_complete</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/*set wkc to appropriate value suitable for s0ix*/</span>
+</span><span class='line'>        <span class="n">writel</span><span class="p">(</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">ss_config</span><span class="o">-&gt;</span><span class="n">wake_state</span><span class="p">.</span><span class="n">wake_enable</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+</span><span class='line'>                       <span class="o">&amp;</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">pmu_reg</span><span class="o">-&gt;</span><span class="n">pm_wkc</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+</span><span class='line'>        <span class="n">writel</span><span class="p">(</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">ss_config</span><span class="o">-&gt;</span><span class="n">wake_state</span><span class="p">.</span><span class="n">wake_enable</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+</span><span class='line'>                       <span class="o">&amp;</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">pmu_reg</span><span class="o">-&gt;</span><span class="n">pm_wkc</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">camera_off</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">display_off</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">platform_is</span><span class="p">(</span><span class="n">INTEL_ATOM_MRFLD</span><span class="p">))</span>
+</span><span class='line'>                <span class="n">up</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">scu_ready_sem</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>mid_s01x_enter()
+
+<ul>
+<li>pmu_prepare_wake() will mask wakeup from AONT timers for s3. If s3 is aborted for any reason, we don&rsquo;t want to leave AONT timers masked until next suspend, otherwise if next to happen is s0ix, no timer could wakeup SoC from s0ix and we might miss to kick the kernel watchdog.</li>
+<li>enter() hooked by mrfld_pmu_enter (defined at arch/x86/platform/intel-mid/intel_soc_mrfld.c). Compared to Medfield and Covertail platform, PM_CMD is not required to send to SCU.</li>
+</ul>
+</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>mid_s01x_enter()</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="kt">int</span> <span class="nf">mid_s0ix_enter</span><span class="p">(</span><span class="kt">int</span> <span class="n">s0ix_state</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">pmu_ops</span> <span class="o">||</span> <span class="o">!</span><span class="n">pmu_ops</span><span class="o">-&gt;</span><span class="n">enter</span><span class="p">))</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* check if we can acquire scu_ready_sem</span>
+</span><span class='line'><span class="cm">         * if we are not able to then do a c6 */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">down_trylock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">scu_ready_sem</span><span class="p">))</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* If PMU is busy, we&#39;ll retry on next C6 */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">_pmu_read_status</span><span class="p">(</span><span class="n">PMU_BUSY_STATUS</span><span class="p">)))</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">up</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">scu_ready_sem</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">pr_debug</span><span class="p">(</span><span class="s">&quot;mid_pmu_cxt-&gt;scu_read_sem is up</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">pmu_prepare_wake</span><span class="p">(</span><span class="n">s0ix_state</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* no need to proceed if schedule pending */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">need_resched</span><span class="p">()))</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pmu_stat_clear</span><span class="p">();</span>
+</span><span class='line'>                <span class="n">up</span><span class="p">(</span><span class="o">&amp;</span><span class="n">mid_pmu_cxt</span><span class="o">-&gt;</span><span class="n">scu_ready_sem</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* entry function for pmu driver ops */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">pmu_ops</span><span class="o">-&gt;</span><span class="n">enter</span><span class="p">(</span><span class="n">s0ix_state</span><span class="p">))</span>
+</span><span class='line'>                <span class="n">ret</span> <span class="o">=</span> <span class="n">s0ix_state</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">ret:</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Intel_mid: Introduction of android watchdogs and kernel watchdogs]]></title>
+    <link href="http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog/"/>
+    <updated>2013-12-02T17:29:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/12/02/intel-mid-introduction-of-android-watchdog-and-kernel-watchdog</id>
+    <content type="html"><![CDATA[<p>Watchdogs monitor software and hardware device and prevent whole system from hanging. After looking into android BSP running on intel mid, merrifield, platform, I will try to classfiy watchdog into the following types. The first two belong to native Android supporting, and the last three are specified to intel-mid platform.</p>
+
+<h2>1. Android framework&rsquo;s Java* watchdog</h2>
+
+<p>Deal with cases when any of the following locks is held for more than a minute or when ServerThread is busy.</p>
+
+<p>&mdash; ThermalManagerService<br/>
+&mdash; PowerManagerService<br/>
+&mdash; WindowMangerService<br/>
+&mdash; MountService<br/>
+&mdash; NetworkManagementService<br/>
+&mdash; ActivityMangerService</p>
+
+<p>If one of above services hangs for one minute, the java watchdog kills it and results in restarting android&rsquo;s framework by killing the SystemServer.</p>
+
+<h2>2. Device-critical services</h2>
+
+<p>Critical services are declared as &ldquo;critical&rdquo; in the corresponding rc files (eg, ueventd, servicemanager). If critical services exist or crash more than four times in four minutes, the device will reboot into recovery mode. This feature is handled by the init process.</p>
+
+<h2>3. Kernel watchdog leads to COLD_RESET</h2>
+
+<p>The kernel watchdog prvents the operating system from hanging. The System Control Unit (SCU firmware) resets the platform when the kernel cannot schedule the watchdog daemon (/usr/bin/ia_watchdogd).</p>
+
+<p>The driver located at /drivers/watchdog/intel_scu_watchdog_evo.c provides a /dev/watchdog device to access the kernel watchdog and ioctls to configure the timer. Since the SCU provides the functionality, all access to watchdog features are routed to the SCU via an IPC (see more PIC regitrations at arch/x86/platform/intel-mid/intel_mid_scu.c)</p>
+
+<ul>
+<li>Init code installs the driver</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>watchdog_rpmsg_init()</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="k">struct</span> <span class="n">rpmsg_driver</span> <span class="n">watchdog_rpmsg</span> <span class="o">=</span> <span class="p">{</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">drv</span><span class="p">.</span><span class="n">name</span>       <span class="o">=</span> <span class="n">KBUILD_MODNAME</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">drv</span><span class="p">.</span><span class="n">owner</span>      <span class="o">=</span> <span class="n">THIS_MODULE</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">id_table</span>       <span class="o">=</span> <span class="n">watchdog_rpmsg_id_table</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">probe</span>          <span class="o">=</span> <span class="n">watchdog_rpmsg_probe</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">callback</span>       <span class="o">=</span> <span class="n">watchdog_rpmsg_cb</span><span class="p">,</span>
+</span><span class='line'>        <span class="p">.</span><span class="n">remove</span>         <span class="o">=</span> <span class="n">watchdog_rpmsg_remove</span><span class="p">,</span>
+</span><span class='line'><span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="n">__init</span> <span class="nf">watchdog_rpmsg_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">intel_mid_identify_cpu</span><span class="p">()</span> <span class="o">==</span> <span class="n">INTEL_MID_CPU_CHIP_TANGIER</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">register_rpmsg_driver</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_rpmsg</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: watchdog driver: bad platform</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">ENODEV</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef MODULE</span>
+</span><span class='line'><span class="n">module_init</span><span class="p">(</span><span class="n">watchdog_rpmsg_init</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#else</span>
+</span><span class='line'><span class="n">rootfs_initcall</span><span class="p">(</span><span class="n">watchdog_rpmsg_init</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>create the /dev/watchdog only if the disabled_kernel_watchdog module parameter is not set. It gets the timer&rsquo;s configuration, registers reboot notifier, registers dump handler to irq#15, and adds sysfs/debugfs entries.</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>watchdog_rpmsg_probe()->intel_scu_watchdog_init()</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+<span class='line-number'>89</span>
+<span class='line-number'>90</span>
+<span class='line-number'>91</span>
+<span class='line-number'>92</span>
+<span class='line-number'>93</span>
+<span class='line-number'>94</span>
+<span class='line-number'>95</span>
+<span class='line-number'>96</span>
+<span class='line-number'>97</span>
+<span class='line-number'>98</span>
+<span class='line-number'>99</span>
+<span class='line-number'>100</span>
+<span class='line-number'>101</span>
+<span class='line-number'>102</span>
+<span class='line-number'>103</span>
+<span class='line-number'>104</span>
+<span class='line-number'>105</span>
+<span class='line-number'>106</span>
+<span class='line-number'>107</span>
+<span class='line-number'>108</span>
+<span class='line-number'>109</span>
+<span class='line-number'>110</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* Init code */</span>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">intel_scu_watchdog_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">normal_wd_action</span>   <span class="o">=</span> <span class="n">SCU_COLD_RESET_ON_TIMEOUT</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_wd_action</span>   <span class="o">=</span> <span class="n">SCU_COLD_RESET_ON_TIMEOUT</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">shutdown_wd_action</span> <span class="o">=</span> <span class="n">SCU_COLD_OFF_ON_TIMEOUT</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef CONFIG_DEBUG_FS</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">panic_reboot_notifier</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'><span class="cp">#endif </span><span class="cm">/* CONFIG_DEBUG_FS */</span><span class="cp"></span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Initially, we are not in shutdown mode */</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">shutdown_flag</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Check timeouts boot parameter */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">check_timeouts</span><span class="p">(</span><span class="n">pre_timeout</span><span class="p">,</span> <span class="n">timeout</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: Invalid timeouts</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">EINVAL</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Reboot notifier */</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_notifier</span><span class="p">.</span><span class="n">notifier_call</span> <span class="o">=</span> <span class="n">reboot_notifier</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_notifier</span><span class="p">.</span><span class="n">priority</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">register_reboot_notifier</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_notifier</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_crit</span><span class="p">(</span><span class="s">&quot;cannot register reboot notifier %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">error_stop_timer</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Do not publish the watchdog device when disable (TO BE REMOVED) */</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">disable_kernel_watchdog</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">.</span><span class="n">minor</span> <span class="o">=</span> <span class="n">WATCHDOG_MINOR</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;watchdog&quot;</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">.</span><span class="n">fops</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_scu_fops</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="n">ret</span> <span class="o">=</span> <span class="n">misc_register</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">.</span><span class="n">fops</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">intel_scu_fops</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="n">ret</span> <span class="o">=</span> <span class="n">misc_register</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">pr_crit</span><span class="p">(</span><span class="s">&quot;Cannot register miscdev %d err =%d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
+</span><span class='line'>                                <span class="n">WATCHDOG_MINOR</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'>                        <span class="k">goto</span> <span class="n">error_reboot_notifier</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* MSI #15 handler to dump registers */</span>
+</span><span class='line'>        <span class="n">handle_mrfl_dev_ioapic</span><span class="p">(</span><span class="n">EXT_TIMER0_MSI</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">request_irq</span><span class="p">((</span><span class="kt">unsigned</span> <span class="kt">int</span><span class="p">)</span><span class="n">EXT_TIMER0_MSI</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">watchdog_warning_interrupt</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">IRQF_SHARED</span><span class="o">|</span><span class="n">IRQF_NO_SUSPEND</span><span class="p">,</span> <span class="s">&quot;watchdog&quot;</span><span class="p">,</span>
+</span><span class='line'>                <span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;error requesting warning irq %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
+</span><span class='line'>                       <span class="n">EXT_TIMER0_MSI</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;error value returned is %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">error_misc_register</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef CONFIG_INTEL_SCU_SOFT_LOCKUP</span>
+</span><span class='line'>        <span class="n">init_timer</span><span class="p">(</span><span class="o">&amp;</span><span class="n">softlock_timer</span><span class="p">);</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">disable_kernel_watchdog</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: Disable kernel watchdog</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="cm">/* Make sure timer is stopped */</span>
+</span><span class='line'>                <span class="n">ret</span> <span class="o">=</span> <span class="n">watchdog_stop</span><span class="p">();</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">ret</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">pr_debug</span><span class="p">(</span><span class="s">&quot;cant disable timer</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef CONFIG_DEBUG_FS</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">create_debugfs_entries</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: Error creating debugfs entries</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">error_debugfs_entry</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">started</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">create_watchdog_sysfs_files</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: Error creating debugfs entries</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">error_sysfs_entry</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">error_sysfs_entry:</span>
+</span><span class='line'>        <span class="cm">/* Nothing special to do */</span>
+</span><span class='line'><span class="cp">#ifdef CONFIG_DEBUG_FS</span>
+</span><span class='line'><span class="nl">error_debugfs_entry:</span>
+</span><span class='line'>        <span class="cm">/* Remove entries done by create function */</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">error_misc_register:</span>
+</span><span class='line'>        <span class="n">misc_deregister</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">miscdev</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">error_reboot_notifier:</span>
+</span><span class='line'>        <span class="n">unregister_reboot_notifier</span><span class="p">(</span><span class="o">&amp;</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_notifier</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">error_stop_timer:</span>
+</span><span class='line'>        <span class="n">watchdog_stop</span><span class="p">();</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>interrupt handler related to pre-timeout dumps kernel backtraces.</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>watchdog_warning_interrupt</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* warning interrupt handler */</span>
+</span><span class='line'><span class="k">static</span> <span class="n">irqreturn_t</span> <span class="nf">watchdog_warning_interrupt</span><span class="p">(</span><span class="kt">int</span> <span class="n">irq</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">dev_id</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="n">pr_warn</span><span class="p">(</span><span class="s">&quot;[SHTDWN] %s, WATCHDOG TIMEOUT!</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* Let&#39;s reset the platform after dumping some data */</span>
+</span><span class='line'>        <span class="n">trigger_all_cpu_backtrace</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">panic</span><span class="p">(</span><span class="s">&quot;Kernel Watchdog&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="cm">/* This code should not be reached */</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">IRQ_HANDLED</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<ul>
+<li>When power transisition happens, reboot_notifier is called for re-configuring watchdog timeouts and its default behavior.
+COLD_RESET is set to reboot, and COLD_OFF is set to poewr halt and off. In case of a stucking rebooting or shutdown procedure, the platform will still could execute reset or power-off seperately.</li>
+</ul>
+
+
+<figure class='code'><figcaption><span>reboot_notifier</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cm">/* Reboot notifier */</span>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">reboot_notifier</span><span class="p">(</span><span class="k">struct</span> <span class="n">notifier_block</span> <span class="o">*</span><span class="n">this</span><span class="p">,</span>
+</span><span class='line'>                           <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">code</span><span class="p">,</span>
+</span><span class='line'>                           <span class="kt">void</span> <span class="o">*</span><span class="n">another_unused</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">code</span> <span class="o">==</span> <span class="n">SYS_RESTART</span> <span class="o">||</span> <span class="n">code</span> <span class="o">==</span> <span class="n">SYS_HALT</span> <span class="o">||</span> <span class="n">code</span> <span class="o">==</span> <span class="n">SYS_POWER_OFF</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">pr_warn</span><span class="p">(</span><span class="s">&quot;Reboot notifier</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">watchdog_set_appropriate_timeouts</span><span class="p">())</span>
+</span><span class='line'>                        <span class="n">pr_crit</span><span class="p">(</span><span class="s">&quot;reboot notifier cant set time</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="k">switch</span> <span class="p">(</span><span class="n">code</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">case</span> <span class="n">SYS_RESTART</span>:
+</span><span class='line'>                        <span class="n">ret</span> <span class="o">=</span> <span class="n">watchdog_set_reset_type</span><span class="p">(</span>
+</span><span class='line'>                                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">reboot_wd_action</span><span class="p">);</span>
+</span><span class='line'>                        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="k">case</span> <span class="n">SYS_HALT</span>:
+</span><span class='line'>                <span class="k">case</span> <span class="n">SYS_POWER_OFF</span>:
+</span><span class='line'>                        <span class="n">ret</span> <span class="o">=</span> <span class="n">watchdog_set_reset_type</span><span class="p">(</span>
+</span><span class='line'>                                <span class="n">watchdog_device</span><span class="p">.</span><span class="n">shutdown_wd_action</span><span class="p">);</span>
+</span><span class='line'>                        <span class="k">break</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;%s: could not set reset type</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef CONFIG_DEBUG_FS</span>
+</span><span class='line'>                <span class="cm">/* debugfs entry to generate a BUG during</span>
+</span><span class='line'><span class="cm">                any shutdown/reboot call */</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">watchdog_device</span><span class="p">.</span><span class="n">panic_reboot_notifier</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">BUG</span><span class="p">();</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>                <span class="cm">/* Don&#39;t do instant reset on close */</span>
+</span><span class='line'>                <span class="n">reset_on_release</span> <span class="o">=</span> <span class="nb">false</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>                <span class="cm">/* Kick once again */</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">disable_kernel_watchdog</span> <span class="o">==</span> <span class="nb">false</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">ret</span> <span class="o">=</span> <span class="n">watchdog_keepalive</span><span class="p">();</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+</span><span class='line'>                                <span class="n">pr_warn</span><span class="p">(</span><span class="s">&quot;%s: no keep alive</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">__func__</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>                        <span class="cm">/* Don&#39;t allow any more keep-alives */</span>
+</span><span class='line'>                        <span class="n">watchdog_device</span><span class="p">.</span><span class="n">shutdown_flag</span> <span class="o">=</span> <span class="nb">true</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">NOTIFY_DONE</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>4. Userspace watchdog daemon</h2>
+
+<p>Source codes are located at /hardware/ia_watchdog/watchdog_daemon folder) and target location is /usr/bin/ia_watchdogd. This daemon is declared as one-shot service in the rc file (init.watchdog.rc) and perform the following steps:</p>
+
+<p>&mdash; open the watchdog device /dev/watchdog.<br/>
+&mdash; configure the pre_timeout with 75 seconds and timeout with 90 seconds.<br/>
+&mdash; Loop forever. In the loop, kick the watchdog device (by writing to &lsquo;R&rsquo; to /dev/watchdog) every 60 seconds.</p>
+
+<h2>5. SCU watchdog leads to PLATFORM_RESET(deep reset)</h2>
+
+<p>This prevents the platform stucking on SCU by issuing a PLATFORM_RESET because the interface between the SCU and PMIC is broken.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[intel_mid: Overview of Simple Platform Interface]]></title>
+    <link href="http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/"/>
+    <updated>2013-11-27T15:40:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface</id>
+    <content type="html"><![CDATA[<p>Start to develop android kernel under X86 MID platform, merrifield.
+I am a newbie for porting kernel to Atom-based platform but am familiar with linux kernel and device drivers.
+Noticed that Intel Android BSP introudes Simple Firmware Interface (SFI) a method for platform firmware to export
+static tables (I2C, SPI, GPIO) to the operation system.</p>
+
+<p>Intel&rsquo;s newer Atom processors support SFI since &ldquo;Moorestown&rdquo; SoC and SFI implementation was merged into upstream kernel 2.6.32(<a href="http://lwn.net/Articles/340476">http://lwn.net/Articles/340476</a>)</p>
+
+<p>Actually, below link descrbies the SFI and explains how does SFI related to ACPI and UEFI.
+<a href="https://simplefirmware.org/faq">https://simplefirmware.org/faq</a></p>
+
+<p>Besides, below patch sets are to refactor existing code and implement a flexible way to support multiple boards and devices.
+<a href="https://lkml.org/lkml/2013/10/10/81">https://lkml.org/lkml/2013/10/10/81</a></p>
+
+<p>/arch/x86/platform/intel-mid/intel_mid_sfi.c is SFI parsing implementation, and let me understand how get_gpio_by_name() works.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Android ram-console upstreaming]]></title>
+    <link href="http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming/"/>
+    <updated>2013-11-08T17:45:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming</id>
+    <content type="html"><![CDATA[<p>While dealing with board bring-up powered by Tegra5, starts to aware of this upstream change for ram console (aka /proc/last_kmsg). A working group, Android Upstreaming, comes from Linaro foundation to merge ram_console into pstore framework ( <a href="http://lwn.net/Articles/497881/">http://lwn.net/Articles/497881/</a>).</p>
+
+<p>The Android Upstreaming team&rsquo;s mission is to reduce and eventually eliminate the differences between the upstream kernel and the Android kernel. The team works closely with Google and upstream kernel developers to find ways to implement Android required features in a way that meets the need of both communities.</p>
+
+<p>There are currently two competing debug facilities to store kernel messages in a persistent storage: a generic pstore and Google&rsquo;s persistent_ram by Colin Cross. Not so long ago (<a href="https://lkml.org/lkml/2012/3/8/252">https://lkml.org/lkml/2012/3/8/252</a>) noticed by Greg KH@ARM Linux, it was decided to fix this situation. There is a buleprint registered by Linaro Linux to descrbie those debug facilities at <a href="https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console">https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console</a></p>
+
+<p>To follow up android upstreaming&rsquo;s works, I remove legacy driver supporting for ram console and persistent ram and switch new pstore framework. In other words, start to looking into /sys/fs/pstore/console-ramoops as we used to did analysis on /proc/last_kmsg for dying moment across system reboot.</p>
+
+<p>My works were merged into Asus internal development branch jb-mr2-t50-k3.10, but not opened yet. We could refer to <a href="https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10">https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10</a> for further reference.</p>
+]]></content>
+  </entry>
+  
+</feed>
