@@ -9,7 +9,7 @@
   <meta name="author" content="Han-Chun Yeh (Paris)">
 
   
-  <meta name="description" content="When there is nothing left to do, the CPUs will go into the idle state to wait until it is needed again. These idle modes, which go by names like & &hellip;">
+  <meta name="description" content="This page has my notes from initial study for Android RenderScript. RenderScript is Android 3D graphics rendering and intensive computation using &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -71,7 +71,58 @@
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2013/12/06/intel-mid-cpuidle-intel-idle-processor-driver-and-new-c-states/">Intel_mid: CPUIDLE: Intel_idle Processor Driver and New C-States</a></h1>
+      <h1 class="entry-title"><a href="/blog/2013/12/12/android-renderscript-notes/">Android RenderScript Notes</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-12-12T12:06:00+08:00" pubdate data-updated="true">Dec 12<span>th</span>, 2013</time>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>This page has my notes from initial study for Android RenderScript.</p>
+
+<p>RenderScript is Android 3D graphics rendering and intensive computation using heterogeneous computing.<br/>
+1. Portability: A general purpose compute API across different system computing hardware<br/>
+2. High Performance<br/>
+3. Developer Friendly: A compute API similar to CUDA, OpenCL or GLSL, and a familiar language with C99</p>
+
+<p>There are three major components in RenderScript<br/>
+1. Offline compiler (llvm-rs-cc): Convert script files into portable bitcode and reflected Java layer<br/>
+2. Online JIT compiler (libbcc): Translate portable bitcode to appropriate machine code (CPU/GPU/DSP/&hellip;)<br/>
+3. Runtime library support (libRS): Manage scripts from Dalvik layer and also provide basic support libraries (math functions, etc.)<br/>
+A good introduciton of <a href="https://events.linuxfoundation.org/slides/2011/lfcs/lfcs2011_llvm_liao.pdf">Android RenderScript on LLVM</a> is given by Shih-Wei Liao, and a good comparsion and analysis of different <a href="https://www.google.com.tw/url?sa=t&amp;rct=j&amp;q=&amp;esrc=s&amp;source=web&amp;cd=6&amp;cad=rja&amp;ved=0CGEQFjAF&amp;url=http%3A%2F%2Fwww.kandroid.org%2Fboard%2Fdata%2Fboard%2Fconference%2Ffile_in_body%2F1%2F6renderscript_2013_10_24_%25EC%2588%2598%25EC%25A0%2595.pdf&amp;ei=ACapUtGyKoGFoQSFv4GgBQ&amp;usg=AFQjCNGj_OC0Yl6ssx7s1EDFii2WmfLyiw&amp;sig2=Ng96XAtyU2Zkc2o7EGbA8g">android programming model</a> is given by Kandroid S/W Fundamentals Study Group at 12th Kandroid Conference, 2013.</p>
+
+<p>Clang is offline frontend compiler to create LLVM bitcode and reflected Java layer. The portable bitcode supplied as a resource within .apk container and is compiled before use one the device. Offline compiler, llvm-rs-cc, performs machine-independent optimizations on host before emitting portable bitcode so that the online JIT on android devices can be light-weight.</p>
+
+<p>Online JIT compiler, libbcc, performs target-specific optimizations and code generation and links dynamically against vendor-specific runtime library funcitons (lib*.bc). An example: RenderScript&rsquo;s runtime (libclcore.bc) comes with vector operations. Xoom&rsquo;s libclcore will have different CPU/GPU support (VFP3-16) than Nexus S&rsquo;s (NEON).</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2013/12/06/intel-mide-cpuidle-intel-idle-processor-driver-and-new-c-states/">Intel_mide: CPUIDLE: Intel_idle Processor Driver and New C-States</a></h1>
     
     
       <p class="meta">
@@ -1465,7 +1516,11 @@ static tables (I2C, SPI, GPIO) to the operation system.</p>
   <ul id="recent_posts">
     
       <li class="post">
-        <a href="/blog/2013/12/06/intel-mid-cpuidle-intel-idle-processor-driver-and-new-c-states/">Intel_mid: CPUIDLE: Intel_idle Processor Driver and New C-States</a>
+        <a href="/blog/2013/12/12/android-renderscript-notes/">Android RenderScript Notes</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2013/12/06/intel-mide-cpuidle-intel-idle-processor-driver-and-new-c-states/">Intel_mide: CPUIDLE: Intel_idle Processor Driver and New C-States</a>
       </li>
     
       <li class="post">
@@ -1478,10 +1533,6 @@ static tables (I2C, SPI, GPIO) to the operation system.</p>
     
       <li class="post">
         <a href="/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/">Intel_mid: Overview of Simple Platform Interface</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2013/11/08/android-ram-console-upstreaming/">Android Ram-console Upstreaming</a>
       </li>
     
   </ul>

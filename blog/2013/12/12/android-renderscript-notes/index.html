@@ -5,11 +5,11 @@
 <!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <title>Category: firmware - Paris Blog</title>
+  <title>Android RenderScript Notes - Paris Blog</title>
   <meta name="author" content="Han-Chun Yeh (Paris)">
 
   
-  <meta name="description" content="Category: firmware">
+  <meta name="description" content="This page has my notes from initial study for Android RenderScript. RenderScript is Android 3D graphics rendering and intensive computation using &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -18,7 +18,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   
-  <link rel="canonical" href="http://pyeh.github.ioblog/categories/firmware">
+  <link rel="canonical" href="http://pyeh.github.io/blog/2013/12/12/android-renderscript-notes">
   <link href="/favicon.png" rel="icon">
   <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
   <link href="/atom.xml" rel="alternate" title="Paris Blog" type="application/atom+xml">
@@ -64,35 +64,101 @@
   <div id="main">
     <div id="content">
       <div>
-<article role="article">
+<article class="hentry" role="article">
   
   <header>
-    <h1 class="entry-title">Category: Firmware</h1>
+    
+      <h1 class="entry-title">Android RenderScript Notes</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-12-12T12:06:00+08:00" pubdate data-updated="true">Dec 12<span>th</span>, 2013</time>
+        
+      </p>
     
   </header>
-  
-  <div id="blog-archives" class="category">
 
 
+<div class="entry-content"><p>This page has my notes from initial study for Android RenderScript.</p>
 
-  
-  <h2>2013</h2>
+<p>RenderScript is Android 3D graphics rendering and intensive computation using heterogeneous computing.<br/>
+1. Portability: A general purpose compute API across different system computing hardware<br/>
+2. High Performance<br/>
+3. Developer Friendly: A compute API similar to CUDA, OpenCL or GLSL, and a familiar language with C99</p>
 
-<article>
-  
-<h1><a href="/blog/2013/11/27/intel-mid-overview-of-simple-platform-interface/">intel_mid: Overview of Simple Platform Interface</a></h1>
-<time datetime="2013-11-27T15:40:00+08:00" pubdate><span class='month'>Nov</span> <span class='day'>27</span> <span class='year'>2013</span></time>
+<p>There are three major components in RenderScript<br/>
+1. Offline compiler (llvm-rs-cc): Convert script files into portable bitcode and reflected Java layer<br/>
+2. Online JIT compiler (libbcc): Translate portable bitcode to appropriate machine code (CPU/GPU/DSP/&hellip;)<br/>
+3. Runtime library support (libRS): Manage scripts from Dalvik layer and also provide basic support libraries (math functions, etc.)<br/>
+A good introduciton of <a href="https://events.linuxfoundation.org/slides/2011/lfcs/lfcs2011_llvm_liao.pdf">Android RenderScript on LLVM</a> is given by Shih-Wei Liao, and a good comparsion and analysis of different <a href="https://www.google.com.tw/url?sa=t&amp;rct=j&amp;q=&amp;esrc=s&amp;source=web&amp;cd=6&amp;cad=rja&amp;ved=0CGEQFjAF&amp;url=http%3A%2F%2Fwww.kandroid.org%2Fboard%2Fdata%2Fboard%2Fconference%2Ffile_in_body%2F1%2F6renderscript_2013_10_24_%25EC%2588%2598%25EC%25A0%2595.pdf&amp;ei=ACapUtGyKoGFoQSFv4GgBQ&amp;usg=AFQjCNGj_OC0Yl6ssx7s1EDFii2WmfLyiw&amp;sig2=Ng96XAtyU2Zkc2o7EGbA8g">android programming model</a> is given by Kandroid S/W Fundamentals Study Group at 12th Kandroid Conference, 2013.</p>
 
-<footer>
-  <span class="categories">posted in <a class='category' href='/blog/categories/android/'>android</a>, <a class='category' href='/blog/categories/firmware/'>firmware</a>, <a class='category' href='/blog/categories/intel/'>intel</a>, <a class='category' href='/blog/categories/kernel/'>kernel</a></span>
-</footer>
+<p>Clang is offline frontend compiler to create LLVM bitcode and reflected Java layer. The portable bitcode supplied as a resource within .apk container and is compiled before use one the device. Offline compiler, llvm-rs-cc, performs machine-independent optimizations on host before emitting portable bitcode so that the online JIT on android devices can be light-weight.</p>
 
-
-</article>
-
+<p>Online JIT compiler, libbcc, performs target-specific optimizations and code generation and links dynamically against vendor-specific runtime library funcitons (lib*.bc). An example: RenderScript&rsquo;s runtime (libclcore.bc) comes with vector operations. Xoom&rsquo;s libclcore will have different CPU/GPU support (VFP3-16) than Nexus S&rsquo;s (NEON).</p>
 </div>
 
+
+  <footer>
+    <p class="meta">
+      
   
+
+<span class="byline author vcard">Posted by <span class="fn">Han-Chun Yeh (Paris)</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2013-12-12T12:06:00+08:00" pubdate data-updated="true">Dec 12<span>th</span>, 2013</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/android/'>android</a>, <a class='category' href='/blog/categories/renderscript/'>renderscript</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://pyeh.github.io/blog/2013/12/12/android-renderscript-notes/" data-via="" data-counturl="http://pyeh.github.io/blog/2013/12/12/android-renderscript-notes/" >Tweet</a>
+  
+  
+  
+    <div class="fb-like" data-send="true" data-width="450" data-show-faces="false"></div>
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2013/12/06/intel-mide-cpuidle-intel-idle-processor-driver-and-new-c-states/" title="Previous Post: Intel_mide: CPUIDLE: Intel_idle processor driver and new C-States">&laquo; Intel_mide: CPUIDLE: Intel_idle processor driver and new C-States</a>
+      
+      
+    </p>
+  </footer>
 </article>
 
 </div>
