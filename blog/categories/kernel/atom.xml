@@ -4,7 +4,7 @@
   <title><![CDATA[Category: kernel | Paris Blog]]></title>
   <link href="http://pyeh.github.io/blog/categories/kernel/atom.xml" rel="self"/>
   <link href="http://pyeh.github.io/"/>
-  <updated>2013-12-12T15:00:12+08:00</updated>
+  <updated>2014-10-22T18:29:53+08:00</updated>
   <id>http://pyeh.github.io/</id>
   <author>
     <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
@@ -12,6 +12,199 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Notes of debugging the kernel using Ftrace]]></title>
+    <link href="http://pyeh.github.io/blog/2014/10/07/notes-of-debugging-the-kernel-using-ftrace/"/>
+    <updated>2014-10-07T23:14:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2014/10/07/notes-of-debugging-the-kernel-using-ftrace</id>
+    <content type="html"><![CDATA[<p>This page has my notes for debugging the kernel using Ftrace</p>
+
+<p>Ftrace is a tracing utility built directly into the Linux kernel. Ftrace was introduced in kernel 2.6.27 by Steven Rostedy and Ingo Molnar. It comes with its own ring buffer for storing trace data, and uses the GCC profiling mechanism. Documentation for this can be found in the Linux kernel source tree at <a href="https://www.kernel.org/doc/Documentation/trace/ftrace.txt">Documentation/trace/ftrace.txt</a></p>
+
+<h4>References:</h4>
+
+<ul>
+<li><a href="http://lwn.net/Articles/365835/">Debugging the kernel using Ftrace &ndash; part 1</a></li>
+<li><a href="http://lwn.net/Articles/366796/">Debugging the kernel using Ftrace &ndash; part 2</a></li>
+<li><a href="http://lwn.net/Articles/370423/">Secrets of the Ftrace function tracer</a></li>
+</ul>
+
+
+<h3>Setting up Ftrace:</h3>
+
+<p>When Ftrace is configured, it will create its own directory called tracing within the debugfs file system.</p>
+
+<pre><code>[~]# cd /sys/kernel/debug/tracing
+[tracing]#
+</code></pre>
+
+<p>For the purpose of debugging, the kernel configuration parameters that should be enabled are:<br/>
+*  Kernel Function Tracer (FUNCTION_TRACER)<br/>
+*  Kernel Function Graph Tracer (FUNCTION_GRAPH_TRACER)<br/>
+*  Enable/disable ftrace dynamically (DYNAMIC_FTRACE)</p>
+
+<p>The function tracer uses the <em>-pg</em> of <em>gcc</em> to have every function in the kernel call a special funciton <code>mcount()</code>.
+During the compilation the mcount() call-sites are recorded, and that list is used at boot time to convert those
+call-sites to NOP when CONFIG_DYNAMIC_FTRACE is set.
+When the function or function graph tracer is enabled, that list is saved to convert those call-sites back to trace calls.</p>
+
+<p>To find out which tracers are available, simply cat the <em>available_tracers</em> file in the tracing directory:</p>
+
+<pre><code>root@K015:/ # cat /d/tracing/available_tracers
+blk function_graph wakeup_rt wakeup preemptirqsoff preemptoff irqsoff function nop
+</code></pre>
+
+<p>To enable the function tracer, just echo &ldquo;function&rdquo; into the <em>current_tracer</em> file.</p>
+
+<pre><code>root@K015:/d/tracing # echo function &gt; current_tracer
+root@K015:/d/tracing # cat&gt; tracer
+# tracer: function
+#
+# entries-in-buffer/entries-written: 205147/172709617   #P:4
+#
+#                              _-----=&gt; irqs-off
+#                             / _----=&gt; need-resched
+#                            | / _---=&gt; hardirq/softirq
+#                            || / _--=&gt; preempt-depth
+#                            ||| /     delay
+#           TASK-PID   CPU#  ||||    TIMESTAMP  FUNCTION
+#              | |       |   ||||       |         |
+        Binder_D-4038  [003] ....    98.468143: cgroup_tasks_write &lt;-cgroup_file_write
+        Binder_D-4038  [003] ....    98.468143: attach_task_by_pid &lt;-cgroup_tasks_write
+        Binder_D-4038  [003] ....    98.468143: cgroup_lock_live_group &lt;-attach_task_by_pid
+        Binder_D-4038  [003] ....    98.468144: mutex_lock &lt;-cgroup_lock_live_group
+        Binder_D-4038  [003] ....    98.468144: __might_sleep &lt;-mutex_lock
+        Binder_D-4038  [003] ....    98.468144: __mutex_lock_slowpath &lt;-mutex_lock
+        Binder_D-4038  [003] ....    98.468144: add_preempt_count &lt;-__mutex_lock_slowpath
+        Binder_D-4038  [003] ...1    98.468145: sub_preempt_count &lt;-__mutex_lock_slowpath
+        Binder_D-4038  [003] ....    98.468145: __rcu_read_lock &lt;-attach_task_by_pid
+</code></pre>
+
+<p>A header is printed with the tracer name that is represented by
+the trace. In this case the tracer is &ldquo;function&rdquo;. Then it shows the
+number of events in the buffer as well as the total number of entries
+that were written. The difference is the number of entries that were
+lost due to the buffer filling up (172709617 &ndash; 205147 = 172504407 events
+lost). #P is the number of online CPUs (#P:4).</p>
+
+<p>The header explains the content of the events. Task name &ldquo;Binder_D&rdquo;, the task
+PID &ldquo;4038&rdquo;, the CPU that it was running on &ldquo;003&rdquo;, the latency format
+(explained below), the timestamp in <secs>.<usecs> format, the
+function name that was traced &ldquo;cgroup_tasks_write&rdquo; and the parent function that
+called this function &ldquo;cgroup_file_write&rdquo;. The timestamp is the time
+at which the function was entered.</p>
+
+<pre><code>irqs-off: 'd' interrupts are disabled. '.' otherwise.
+    Note: If the architecture does not support a way to
+      read the irq flags variable, an 'X' will always
+      be printed here.
+
+need-resched:
+'N' both TIF_NEED_RESCHED and PREEMPT_NEED_RESCHED is set,
+'n' only TIF_NEED_RESCHED is set,
+'p' only PREEMPT_NEED_RESCHED is set,
+'.' otherwise.
+
+hardirq/softirq:
+'H' - hard irq occurred inside a softirq.
+'h' - hard irq is running
+'s' - soft irq is running
+'.' - normal context.
+
+preempt-depth: The level of preempt_disabled
+</code></pre>
+
+<p>The above is mostly meaningful for kernel developers.</p>
+
+<h3>Tips</h3>
+
+<hr />
+
+<h4>Using <em>trace_prink()</em></h4>
+
+<p>If you are debugging a high volume area such as the timer interrupt, the scheduler, or the network, <em>printk()</em> can lead to bogging down the system or can even create a live lock.
+It is also quite common to see a bug &ldquo;disappear&rdquo; when adding a few <em>printk()</em>s. This is due to the sheer overhead that <em>printk()</em> introduces.</p>
+
+<p>Ftrace introduces a new form of <em>printk()</em> called <em>trace_printk()</em>.</p>
+
+<p>For example, below code add entry/exit checkpoints to know how long system stays at standy mode
+``` c arch/x86/platform/intel-mid/intel_soc_pmu.c
+static int mid_suspend_enter(suspend_state_t state)
+{</p>
+
+<pre><code>    int ret;
+
+    if (state != PM_SUSPEND_MEM)
+            return -EINVAL;
+</code></pre>
+
+<p>&hellip;<SKIP>&hellip;</p>
+
+<pre><code>    trace_printk("s3_entry\n");
+    ret = standby_enter();
+    trace_printk("s3_exit %d\n", ret);
+</code></pre>
+
+<p>&hellip;<SKIP>&hellip;</p>
+
+<pre><code>    return ret;
+</code></pre>
+
+<p>}
+```
+<em>trace_printk()</em> output will appear in any tracer, even the function and function graph tracers.</p>
+
+<pre><code># tracer: nop
+#
+# entries-in-buffer/entries-written: 4/4   #P:4
+#
+#                              _-----=&gt; irqs-off
+#                             / _----=&gt; need-resched
+#                            | / _---=&gt; hardirq/softirq
+#                            || / _--=&gt; preempt-depth
+#                            ||| /     delay
+#           TASK-PID   CPU#  ||||    TIMESTAMP  FUNCTION
+#              | |       |   ||||       |         |
+    kworker/u8:5-1178  [000] d...   318.726581: mid_suspend_enter: s3_entry
+    kworker/u8:5-1178  [000] d...   377.664365: mid_suspend_enter: s3_exit 0
+    kworker/u8:5-1178  [000] d...   378.514933: mid_suspend_enter: s3_entry
+    kworker/u8:5-1178  [000] d...   569.010863: mid_suspend_enter: s3_exit 0
+</code></pre>
+
+<h4>Tracing a specific process</h4>
+
+<p>Trace a specific process, or set of processes. The file set_ftrace_pid lets you specify specific processes that you want to trace.</p>
+
+<pre><code>[tracing]# echo $$ &gt; set_ftrace_pid
+</code></pre>
+
+<p>The above will set the function tracer to only trace the bash shell that executed the echo command.</p>
+
+<p>Clear the <em>set_ftrace_pid file</em> if you want to go back to generic function tracing</p>
+
+<pre><code>[tracing]# echo -1 &gt; set_ftrace_pid
+</code></pre>
+
+<h4>Capturing Ftrace to oops when kernel panic</h4>
+
+<p>You can capture the function calls leading up to a panic by placing the following on the kernel command line</p>
+
+<pre><code>ftrace=function ftrace_dump_on_oops
+</code></pre>
+
+<p>or,  by echoing a &ldquo;1&rdquo; into <em>/proc/sys/kernel/ftrace_dump_on_oops</em>, will enable Ftrace to dump to the console the entire trace buffer in ASCII format on oops or panic.</p>
+
+<h4>Find latencies on kernel startup</h4>
+
+<p>Use the following on the kernel command line:</p>
+
+<pre><code>tracing_thresh=10000 ftrace=function_graph
+</code></pre>
+
+<p>this traces all functions taking longer than 2000 microseconds (10 ms).</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Intel_mide: CPUIDLE: Intel_idle processor driver and new C-States]]></title>
@@ -812,23 +1005,6 @@ static tables (I2C, SPI, GPIO) to the operation system.</p>
 <a href="https://lkml.org/lkml/2013/10/10/81">https://lkml.org/lkml/2013/10/10/81</a></p>
 
 <p>/arch/x86/platform/intel-mid/intel_mid_sfi.c is SFI parsing implementation, and let me understand how get_gpio_by_name() works.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Android ram-console upstreaming]]></title>
-    <link href="http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming/"/>
-    <updated>2013-11-08T17:45:00+08:00</updated>
-    <id>http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming</id>
-    <content type="html"><![CDATA[<p>While dealing with board bring-up powered by Tegra5, starts to aware of this upstream change for ram console (aka /proc/last_kmsg). A working group, Android Upstreaming, comes from Linaro foundation to merge ram_console into pstore framework ( <a href="http://lwn.net/Articles/497881/">http://lwn.net/Articles/497881/</a>).</p>
-
-<p>The Android Upstreaming team&rsquo;s mission is to reduce and eventually eliminate the differences between the upstream kernel and the Android kernel. The team works closely with Google and upstream kernel developers to find ways to implement Android required features in a way that meets the need of both communities.</p>
-
-<p>There are currently two competing debug facilities to store kernel messages in a persistent storage: a generic pstore and Google&rsquo;s persistent_ram by Colin Cross. Not so long ago (<a href="https://lkml.org/lkml/2012/3/8/252">https://lkml.org/lkml/2012/3/8/252</a>) noticed by Greg KH@ARM Linux, it was decided to fix this situation. There is a buleprint registered by Linaro Linux to descrbie those debug facilities at <a href="https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console">https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console</a></p>
-
-<p>To follow up android upstreaming&rsquo;s works, I remove legacy driver supporting for ram console and persistent ram and switch new pstore framework. In other words, start to looking into /sys/fs/pstore/console-ramoops as we used to did analysis on /proc/last_kmsg for dying moment across system reboot.</p>
-
-<p>My works were merged into Asus internal development branch jb-mr2-t50-k3.10, but not opened yet. We could refer to <a href="https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10">https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10</a> for further reference.</p>
 ]]></content>
   </entry>
   
