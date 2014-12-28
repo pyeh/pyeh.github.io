@@ -4,7 +4,7 @@
   <title><![CDATA[Paris Blog]]></title>
   <link href="http://pyeh.github.io/atom.xml" rel="self"/>
   <link href="http://pyeh.github.io/"/>
-  <updated>2013-12-12T15:00:12+08:00</updated>
+  <updated>2014-12-29T00:34:10+08:00</updated>
   <id>http://pyeh.github.io/</id>
   <author>
     <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
@@ -12,6 +12,878 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Android vibrator on MSM8909 platform]]></title>
+    <link href="http://pyeh.github.io/blog/2014/12/22/android-vibrator-on-msm8909-platform/"/>
+    <updated>2014-12-22T23:38:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2014/12/22/android-vibrator-on-msm8909-platform</id>
+    <content type="html"><![CDATA[<p>QPNP (Qualcomm Plug Plug N Play) vibrator is a peripheral on Qualcomm PMICs. The PMIC is connected to MSM8909 via SPMI bus.
+Its driver uses the timed-output framework to interface with the userspace.</p>
+
+<h3>1. MSM8909 Vibrator driver implementation and DTS file</h3>
+
+<p>The vibrator is connected on the VIB_DRV_N line of the QPNP PMIC, and the PMIC vibrator driver can be used to program the voltage from 1.2 V to 3.1 V in 100 mV step through VIB_DRV_N pin.</p>
+
+<h4>DTSI documentation</h4>
+
+<figure class='code'><figcaption><span>kernel/arch/arm/boot/dts/qcom/msm-pm8909.dtsi</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'>            <span class="nl">pm8909_vib:</span> <span class="n">qcom</span><span class="p">,</span><span class="n">vibrator</span><span class="err">@</span><span class="n">c000</span> <span class="p">{</span>
+</span><span class='line'>                    <span class="n">compatible</span> <span class="o">=</span> <span class="s">&quot;qcom,qpnp-vibrator&quot;</span><span class="p">;</span>
+</span><span class='line'>                    <span class="n">reg</span> <span class="o">=</span> <span class="o">&lt;</span><span class="mh">0xc000</span> <span class="mh">0x100</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span class='line'>                    <span class="n">label</span> <span class="o">=</span> <span class="s">&quot;vibrator&quot;</span><span class="p">;</span>
+</span><span class='line'>                    <span class="n">status</span> <span class="o">=</span> <span class="s">&quot;disabled&quot;</span><span class="p">;</span>
+</span><span class='line'>            <span class="p">};</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h4>Documentation/devicetree/bindings/platform/msm/qpnp-vibrator.txt</h4>
+
+<h5>Required Properties:</h5>
+
+<pre><code>- status: default status is set to "disabled.  Must be "okay"  
+- compatible: must be "qcom,qpnp-vibrator"  
+- label: name which describes the device  
+- reg: address of device  
+</code></pre>
+
+<h5>Optional Properties:</h5>
+
+<pre><code>- qcom,vib-timeout-ms: timeout of vibrator, in ms.  Default 15000 ms  
+- qcom,vib-vtg-level-mV: voltage level, in mV.  Default 3100 mV  
+</code></pre>
+
+<h4>vibrator driver source</h4>
+
+<p>QPNP vibrator operates in two modes &ndash; manual and PWM (Pulse Width Modulation). PWM is supported
+through one of dtest lines connected to the vibrator. Manual mode is used on MSM8909 platform.</p>
+
+<figure class='code'><figcaption><span>qpnp_vibrator_prboe() under kernel/drivers/platform/msm/qpnp-vibrator.c</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">qpnp_vibrator_probe</span><span class="p">(</span><span class="k">struct</span> <span class="n">spmi_device</span> <span class="o">*</span><span class="n">spmi</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">qpnp_vib</span> <span class="o">*</span><span class="n">vib</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">resource</span> <span class="o">*</span><span class="n">vib_resource</span><span class="p">;</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">vib</span> <span class="o">=</span> <span class="n">devm_kzalloc</span><span class="p">(</span><span class="o">&amp;</span><span class="n">spmi</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="o">*</span><span class="n">vib</span><span class="p">),</span> <span class="n">GFP_KERNEL</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">vib</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">ENOMEM</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">vib</span><span class="o">-&gt;</span><span class="n">spmi</span> <span class="o">=</span> <span class="n">spmi</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">vib_resource</span> <span class="o">=</span> <span class="n">spmi_get_resource</span><span class="p">(</span><span class="n">spmi</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">IORESOURCE_MEM</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">vib_resource</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">dev_err</span><span class="p">(</span><span class="o">&amp;</span><span class="n">spmi</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span> <span class="s">&quot;Unable to get vibrator base address</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">EINVAL</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="n">vib</span><span class="o">-&gt;</span><span class="n">base</span> <span class="o">=</span> <span class="n">vib_resource</span><span class="o">-&gt;</span><span class="n">start</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">rc</span> <span class="o">=</span> <span class="n">qpnp_vib_parse_dt</span><span class="p">(</span><span class="n">vib</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">rc</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">dev_err</span><span class="p">(</span><span class="o">&amp;</span><span class="n">spmi</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span> <span class="s">&quot;DT parsing failed</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">rc</span> <span class="o">=</span> <span class="n">qpnp_vibrator_config</span><span class="p">(</span><span class="n">vib</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">rc</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">dev_err</span><span class="p">(</span><span class="o">&amp;</span><span class="n">spmi</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span> <span class="s">&quot;vib config failed</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">mutex_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">INIT_WORK</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">work</span><span class="p">,</span> <span class="n">qpnp_vib_update</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">hrtimer_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">vib_timer</span><span class="p">,</span> <span class="n">CLOCK_MONOTONIC</span><span class="p">,</span> <span class="n">HRTIMER_MODE_REL</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">vib</span><span class="o">-&gt;</span><span class="n">vib_timer</span><span class="p">.</span><span class="n">function</span> <span class="o">=</span> <span class="n">qpnp_vib_timer_func</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">vib</span><span class="o">-&gt;</span><span class="n">timed_dev</span><span class="p">.</span><span class="n">name</span> <span class="o">=</span> <span class="s">&quot;vibrator&quot;</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">vib</span><span class="o">-&gt;</span><span class="n">timed_dev</span><span class="p">.</span><span class="n">get_time</span> <span class="o">=</span> <span class="n">qpnp_vib_get_time</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">vib</span><span class="o">-&gt;</span><span class="n">timed_dev</span><span class="p">.</span><span class="n">enable</span> <span class="o">=</span> <span class="n">qpnp_vib_enable</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">dev_set_drvdata</span><span class="p">(</span><span class="o">&amp;</span><span class="n">spmi</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span> <span class="n">vib</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">rc</span> <span class="o">=</span> <span class="n">timed_output_dev_register</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">timed_dev</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h4>Uses timed output framework</h4>
+
+<p>callback <em>.enable</em> and <em>.get_time</em> of <em>struct timed_output_dev</em> is hooked by <code>qpnp_vib_enable()</code> and <code>qpnp_vib_get_time()</code>.</p>
+
+<figure class='code'><figcaption><span>Implementation of qnp_vib_enable() and qpnp_vib_get_time()</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">qpnp_vib_enable</span><span class="p">(</span><span class="k">struct</span> <span class="n">timed_output_dev</span> <span class="o">*</span><span class="n">dev</span><span class="p">,</span> <span class="kt">int</span> <span class="n">value</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">qpnp_vib</span> <span class="o">*</span><span class="n">vib</span> <span class="o">=</span> <span class="n">container_of</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span> <span class="k">struct</span> <span class="n">qpnp_vib</span><span class="p">,</span>
+</span><span class='line'>                                         <span class="n">timed_dev</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">mutex_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">hrtimer_cancel</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">vib_timer</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">value</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                <span class="n">vib</span><span class="o">-&gt;</span><span class="n">state</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">value</span> <span class="o">=</span> <span class="p">(</span><span class="n">value</span> <span class="o">&gt;</span> <span class="n">vib</span><span class="o">-&gt;</span><span class="n">timeout</span> <span class="o">?</span>
+</span><span class='line'>                                 <span class="n">vib</span><span class="o">-&gt;</span><span class="n">timeout</span> <span class="o">:</span> <span class="n">value</span><span class="p">);</span>
+</span><span class='line'>                <span class="n">vib</span><span class="o">-&gt;</span><span class="n">state</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+</span><span class='line'>                <span class="n">hrtimer_start</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">vib_timer</span><span class="p">,</span>
+</span><span class='line'>                              <span class="n">ktime_set</span><span class="p">(</span><span class="n">value</span> <span class="o">/</span> <span class="mi">1000</span><span class="p">,</span> <span class="p">(</span><span class="n">value</span> <span class="o">%</span> <span class="mi">1000</span><span class="p">)</span> <span class="o">*</span> <span class="mi">1000000</span><span class="p">),</span>
+</span><span class='line'>                              <span class="n">HRTIMER_MODE_REL</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>        <span class="n">mutex_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">schedule_work</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">work</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">qpnp_vib_get_time</span><span class="p">(</span><span class="k">struct</span> <span class="n">timed_output_dev</span> <span class="o">*</span><span class="n">dev</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">qpnp_vib</span> <span class="o">*</span><span class="n">vib</span> <span class="o">=</span> <span class="n">container_of</span><span class="p">(</span><span class="n">dev</span><span class="p">,</span> <span class="k">struct</span> <span class="n">qpnp_vib</span><span class="p">,</span>
+</span><span class='line'>                                                         <span class="n">timed_dev</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">hrtimer_active</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">vib_timer</span><span class="p">))</span> <span class="p">{</span>
+</span><span class='line'>                <span class="n">ktime_t</span> <span class="n">r</span> <span class="o">=</span> <span class="n">hrtimer_get_remaining</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">vib_timer</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">return</span> <span class="p">(</span><span class="kt">int</span><span class="p">)</span><span class="n">ktime_to_us</span><span class="p">(</span><span class="n">r</span><span class="p">);</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span>
+</span><span class='line'>                <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h4>wq is scheduled to execute work of qpnp_vib_update() and turns off vibrator via qpnp_vibrator_suspend() at suspend callback.</h4>
+
+<p>Inside <code>qpnp_vib_update()</code> and <code>qpnp_vibrator_suspend()</code>, they both call <code>qpnp_vib_set()</code> to turn on/off vibrator.</p>
+
+<figure class='code'><figcaption><span>Implementation of qpnp_vib_set() to control vibrator via PWM or Manual Mode</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">qpnp_vib_set</span><span class="p">(</span><span class="k">struct</span> <span class="n">qpnp_vib</span> <span class="o">*</span><span class="n">vib</span><span class="p">,</span> <span class="kt">int</span> <span class="n">on</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'>        <span class="n">u8</span> <span class="n">val</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">on</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">mode</span> <span class="o">!=</span> <span class="n">QPNP_VIB_MANUAL</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">pwm_enable</span><span class="p">(</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">pwm_info</span><span class="p">.</span><span class="n">pwm_dev</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">val</span> <span class="o">=</span> <span class="n">vib</span><span class="o">-&gt;</span><span class="n">reg_en_ctl</span><span class="p">;</span>
+</span><span class='line'>                        <span class="n">val</span> <span class="o">|=</span> <span class="n">QPNP_VIB_EN</span><span class="p">;</span>
+</span><span class='line'>                        <span class="n">rc</span> <span class="o">=</span> <span class="n">qpnp_vib_write_u8</span><span class="p">(</span><span class="n">vib</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">val</span><span class="p">,</span>
+</span><span class='line'>                                        <span class="n">QPNP_VIB_EN_CTL</span><span class="p">(</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">base</span><span class="p">));</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                                <span class="k">return</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'>                        <span class="n">vib</span><span class="o">-&gt;</span><span class="n">reg_en_ctl</span> <span class="o">=</span> <span class="n">val</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                <span class="k">if</span> <span class="p">(</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">mode</span> <span class="o">!=</span> <span class="n">QPNP_VIB_MANUAL</span><span class="p">)</span>
+</span><span class='line'>                        <span class="n">pwm_disable</span><span class="p">(</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">pwm_info</span><span class="p">.</span><span class="n">pwm_dev</span><span class="p">);</span>
+</span><span class='line'>                <span class="k">else</span> <span class="p">{</span>
+</span><span class='line'>                        <span class="n">val</span> <span class="o">=</span> <span class="n">vib</span><span class="o">-&gt;</span><span class="n">reg_en_ctl</span><span class="p">;</span>
+</span><span class='line'>                        <span class="n">val</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">QPNP_VIB_EN</span><span class="p">;</span>
+</span><span class='line'>                        <span class="n">rc</span> <span class="o">=</span> <span class="n">qpnp_vib_write_u8</span><span class="p">(</span><span class="n">vib</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">val</span><span class="p">,</span>
+</span><span class='line'>                                        <span class="n">QPNP_VIB_EN_CTL</span><span class="p">(</span><span class="n">vib</span><span class="o">-&gt;</span><span class="n">base</span><span class="p">));</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="p">(</span><span class="n">rc</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                                <span class="k">return</span> <span class="n">rc</span><span class="p">;</span>
+</span><span class='line'>                        <span class="n">vib</span><span class="o">-&gt;</span><span class="n">reg_en_ctl</span> <span class="o">=</span> <span class="n">val</span><span class="p">;</span>
+</span><span class='line'>                <span class="p">}</span>
+</span><span class='line'>        <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>2. Timed output class driver</h3>
+
+<p>Timed output is a class drvier to allow changing a state and restore is automatically after a specfied timeout.
+This exposes a user space interface under <em>/sys/class/timed_output/vibrator/enable</em> used by vibrator code.</p>
+
+<figure class='code'><figcaption><span>kernel/drivers/staging/android/timed_output.c</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">ssize_t</span> <span class="nf">enable_show</span><span class="p">(</span><span class="k">struct</span> <span class="n">device</span> <span class="o">*</span><span class="n">dev</span><span class="p">,</span> <span class="k">struct</span> <span class="n">device_attribute</span> <span class="o">*</span><span class="n">attr</span><span class="p">,</span>
+</span><span class='line'>                <span class="kt">char</span> <span class="o">*</span><span class="n">buf</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">timed_output_dev</span> <span class="o">*</span><span class="n">tdev</span> <span class="o">=</span> <span class="n">dev_get_drvdata</span><span class="p">(</span><span class="n">dev</span><span class="p">);</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">remaining</span> <span class="o">=</span> <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">get_time</span><span class="p">(</span><span class="n">tdev</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">sprintf</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="s">&quot;%d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">remaining</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">static</span> <span class="kt">ssize_t</span> <span class="nf">enable_store</span><span class="p">(</span>
+</span><span class='line'>                <span class="k">struct</span> <span class="n">device</span> <span class="o">*</span><span class="n">dev</span><span class="p">,</span> <span class="k">struct</span> <span class="n">device_attribute</span> <span class="o">*</span><span class="n">attr</span><span class="p">,</span>
+</span><span class='line'>                <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">size</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="k">struct</span> <span class="n">timed_output_dev</span> <span class="o">*</span><span class="n">tdev</span> <span class="o">=</span> <span class="n">dev_get_drvdata</span><span class="p">(</span><span class="n">dev</span><span class="p">);</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">value</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">sscanf</span><span class="p">(</span><span class="n">buf</span><span class="p">,</span> <span class="s">&quot;%d&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">value</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">EINVAL</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">enable</span><span class="p">(</span><span class="n">tdev</span><span class="p">,</span> <span class="n">value</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">size</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'><span class="kt">int</span> <span class="nf">timed_output_dev_register</span><span class="p">(</span><span class="k">struct</span> <span class="n">timed_output_dev</span> <span class="o">*</span><span class="n">tdev</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">tdev</span> <span class="o">||</span> <span class="o">!</span><span class="n">tdev</span><span class="o">-&gt;</span><span class="n">name</span> <span class="o">||</span> <span class="o">!</span><span class="n">tdev</span><span class="o">-&gt;</span><span class="n">enable</span> <span class="o">||</span> <span class="o">!</span><span class="n">tdev</span><span class="o">-&gt;</span><span class="n">get_time</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">EINVAL</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">create_timed_output_class</span><span class="p">();</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">index</span> <span class="o">=</span> <span class="n">atomic_inc_return</span><span class="p">(</span><span class="o">&amp;</span><span class="n">device_count</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">dev</span> <span class="o">=</span> <span class="n">device_create</span><span class="p">(</span><span class="n">timed_output_class</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span>
+</span><span class='line'>                <span class="n">MKDEV</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">index</span><span class="p">),</span> <span class="nb">NULL</span><span class="p">,</span> <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">IS_ERR</span><span class="p">(</span><span class="n">tdev</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">))</span>
+</span><span class='line'>                <span class="k">return</span> <span class="n">PTR_ERR</span><span class="p">(</span><span class="n">tdev</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">device_create_file</span><span class="p">(</span><span class="n">tdev</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">dev_attr_enable</span><span class="p">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">ret</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">goto</span> <span class="n">err_create_file</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="n">dev_set_drvdata</span><span class="p">(</span><span class="n">tdev</span><span class="o">-&gt;</span><span class="n">dev</span><span class="p">,</span> <span class="n">tdev</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">state</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'><span class="nl">err_create_file:</span>
+</span><span class='line'>        <span class="n">device_destroy</span><span class="p">(</span><span class="n">timed_output_class</span><span class="p">,</span> <span class="n">MKDEV</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">index</span><span class="p">));</span>
+</span><span class='line'>        <span class="n">pr_err</span><span class="p">(</span><span class="s">&quot;failed to register driver %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span>
+</span><span class='line'>                        <span class="n">tdev</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'><span class="n">EXPORT_SYMBOL_GPL</span><span class="p">(</span><span class="n">timed_output_dev_register</span><span class="p">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>3. Android vibrator HAL</h3>
+
+<p>Its interface to linux device drivers call with the specified timeout in millisecond via <code>vibrator_on()</code>.</p>
+
+<figure class='code'><figcaption><span>hardware/libhardware_legacy/vibrator/vibrator.c</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="cp">#define THE_DEVICE &quot;/sys/class/timed_output/vibrator/enable&quot;</span>
+</span><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">sendit</span><span class="p">(</span><span class="kt">int</span> <span class="n">timeout_ms</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>    <span class="kt">int</span> <span class="n">nwr</span><span class="p">,</span> <span class="n">ret</span><span class="p">,</span> <span class="n">fd</span><span class="p">;</span>
+</span><span class='line'>    <span class="kt">char</span> <span class="n">value</span><span class="p">[</span><span class="mi">20</span><span class="p">];</span>
+</span><span class='line'>
+</span><span class='line'><span class="cp">#ifdef QEMU_HARDWARE</span>
+</span><span class='line'>    <span class="k">if</span> <span class="p">(</span><span class="n">qemu_check</span><span class="p">())</span> <span class="p">{</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">qemu_control_command</span><span class="p">(</span> <span class="s">&quot;vibrator:%d&quot;</span><span class="p">,</span> <span class="n">timeout_ms</span> <span class="p">);</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'><span class="cp">#endif</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">fd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">THE_DEVICE</span><span class="p">,</span> <span class="n">O_RDWR</span><span class="p">);</span>
+</span><span class='line'>    <span class="k">if</span><span class="p">(</span><span class="n">fd</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">errno</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">nwr</span> <span class="o">=</span> <span class="n">sprintf</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="s">&quot;%d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">timeout_ms</span><span class="p">);</span>
+</span><span class='line'>    <span class="n">ret</span> <span class="o">=</span> <span class="n">write</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">value</span><span class="p">,</span> <span class="n">nwr</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">);</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">return</span> <span class="p">(</span><span class="n">ret</span> <span class="o">==</span> <span class="n">nwr</span><span class="p">)</span> <span class="o">?</span> <span class="mi">0</span> <span class="o">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kt">int</span> <span class="nf">vibrator_on</span><span class="p">(</span><span class="kt">int</span> <span class="n">timeout_ms</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>    <span class="cm">/* constant on, up to maximum allowed time */</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">sendit</span><span class="p">(</span><span class="n">timeout_ms</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kt">int</span> <span class="nf">vibrator_off</span><span class="p">()</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">sendit</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>4. Native layer through JNI between HAL and vibrator service</h3>
+
+<p>Controls of vibrator service reaches via <code>vibratorOn()</code>, <code>vibratorOff()</code>, and <code>vibratorExists()</code>.</p>
+
+<figure class='code'><figcaption><span>frameworks//base/services/core/jni/com_android_server_VibratorService.cpp</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">vibratorOn</span><span class="p">(</span><span class="n">JNIEnv</span> <span class="o">*</span><span class="n">env</span><span class="p">,</span> <span class="n">jobject</span> <span class="n">clazz</span><span class="p">,</span> <span class="n">jlong</span> <span class="n">timeout_ms</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>    <span class="c1">// ALOGI(&quot;vibratorOn\n&quot;);</span>
+</span><span class='line'>    <span class="n">vibrator_on</span><span class="p">(</span><span class="n">timeout_ms</span><span class="p">);</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">static</span> <span class="kt">void</span> <span class="nf">vibratorOff</span><span class="p">(</span><span class="n">JNIEnv</span> <span class="o">*</span><span class="n">env</span><span class="p">,</span> <span class="n">jobject</span> <span class="n">clazz</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>    <span class="c1">// ALOGI(&quot;vibratorOff\n&quot;);</span>
+</span><span class='line'>    <span class="n">vibrator_off</span><span class="p">();</span>
+</span><span class='line'><span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="k">static</span> <span class="n">JNINativeMethod</span> <span class="n">method_table</span><span class="p">[]</span> <span class="o">=</span> <span class="p">{</span>
+</span><span class='line'>    <span class="p">{</span> <span class="s">&quot;vibratorExists&quot;</span><span class="p">,</span> <span class="s">&quot;()Z&quot;</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span><span class="o">*</span><span class="p">)</span><span class="n">vibratorExists</span> <span class="p">},</span>
+</span><span class='line'>    <span class="p">{</span> <span class="s">&quot;vibratorOn&quot;</span><span class="p">,</span> <span class="s">&quot;(J)V&quot;</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span><span class="o">*</span><span class="p">)</span><span class="n">vibratorOn</span> <span class="p">},</span>
+</span><span class='line'>    <span class="p">{</span> <span class="s">&quot;vibratorOff&quot;</span><span class="p">,</span> <span class="s">&quot;()V&quot;</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span><span class="o">*</span><span class="p">)</span><span class="n">vibratorOff</span> <span class="p">}</span>
+</span><span class='line'><span class="p">};</span>
+</span><span class='line'>
+</span><span class='line'><span class="kt">int</span> <span class="nf">register_android_server_VibratorService</span><span class="p">(</span><span class="n">JNIEnv</span> <span class="o">*</span><span class="n">env</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>    <span class="k">return</span> <span class="n">jniRegisterNativeMethods</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="s">&quot;com/android/server/VibratorService&quot;</span><span class="p">,</span>
+</span><span class='line'>            <span class="n">method_table</span><span class="p">,</span> <span class="n">NELEM</span><span class="p">(</span><span class="n">method_table</span><span class="p">));</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>5. Java Vibrator Service</h3>
+
+<p>In application layer before controling vibrator, applications have to get the access to the vibrator service.
+The control goes into the vibrator service (<em>Framework Layer</em>) thru binder inteface.
+For example, App. creates Vibrator object and start the vibration via <code>startVibrationLocked(vib)</code>.</p>
+
+<p>Inside <code>startVibrationLocked()</code>:</p>
+
+<p>If mTimeout != 0, then call the JNI function <code>vibratorOn()</code>.
+else, call the code, which handle the rhythmic vibration pattern, which intern call the <code>vibratorOn()</code> through <code>VibrateThread()</code>.</p>
+
+<figure class='code'><figcaption><span>frameworks/base/services/core/java/com/android/server/VibratorService.java</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="c1">// Lock held on mVibrations</span>
+</span><span class='line'><span class="kd">private</span> <span class="kt">void</span> <span class="nf">startVibrationLocked</span><span class="o">(</span><span class="kd">final</span> <span class="n">Vibration</span> <span class="n">vib</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">mLowPowerMode</span>
+</span><span class='line'>                <span class="o">&amp;&amp;</span> <span class="n">vib</span><span class="o">.</span><span class="na">mUsageHint</span> <span class="o">!=</span> <span class="n">AudioAttributes</span><span class="o">.</span><span class="na">USAGE_NOTIFICATION_RINGTONE</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">mode</span> <span class="o">=</span> <span class="n">mAppOpsService</span><span class="o">.</span><span class="na">checkAudioOperation</span><span class="o">(</span><span class="n">AppOpsManager</span><span class="o">.</span><span class="na">OP_VIBRATE</span><span class="o">,</span>
+</span><span class='line'>                <span class="n">vib</span><span class="o">.</span><span class="na">mUsageHint</span><span class="o">,</span> <span class="n">vib</span><span class="o">.</span><span class="na">mUid</span><span class="o">,</span> <span class="n">vib</span><span class="o">.</span><span class="na">mOpPkg</span><span class="o">);</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">mode</span> <span class="o">==</span> <span class="n">AppOpsManager</span><span class="o">.</span><span class="na">MODE_ALLOWED</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">mode</span> <span class="o">=</span> <span class="n">mAppOpsService</span><span class="o">.</span><span class="na">startOperation</span><span class="o">(</span><span class="n">AppOpsManager</span><span class="o">.</span><span class="na">getToken</span><span class="o">(</span><span class="n">mAppOpsService</span><span class="o">),</span>
+</span><span class='line'>                <span class="n">AppOpsManager</span><span class="o">.</span><span class="na">OP_VIBRATE</span><span class="o">,</span> <span class="n">vib</span><span class="o">.</span><span class="na">mUid</span><span class="o">,</span> <span class="n">vib</span><span class="o">.</span><span class="na">mOpPkg</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">mode</span> <span class="o">!=</span> <span class="n">AppOpsManager</span><span class="o">.</span><span class="na">MODE_ALLOWED</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="k">if</span> <span class="o">(</span><span class="n">mode</span> <span class="o">==</span> <span class="n">AppOpsManager</span><span class="o">.</span><span class="na">MODE_ERRORED</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">Slog</span><span class="o">.</span><span class="na">w</span><span class="o">(</span><span class="n">TAG</span><span class="o">,</span> <span class="s">&quot;Would be an error: vibrate from uid &quot;</span> <span class="o">+</span> <span class="n">vib</span><span class="o">.</span><span class="na">mUid</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>            <span class="n">mH</span><span class="o">.</span><span class="na">post</span><span class="o">(</span><span class="n">mVibrationRunnable</span><span class="o">);</span>
+</span><span class='line'>            <span class="k">return</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">RemoteException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>    <span class="k">if</span> <span class="o">(</span><span class="n">vib</span><span class="o">.</span><span class="na">mTimeout</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="n">doVibratorOn</span><span class="o">(</span><span class="n">vib</span><span class="o">.</span><span class="na">mTimeout</span><span class="o">,</span> <span class="n">vib</span><span class="o">.</span><span class="na">mUid</span><span class="o">,</span> <span class="n">vib</span><span class="o">.</span><span class="na">mUsageHint</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">mH</span><span class="o">.</span><span class="na">postDelayed</span><span class="o">(</span><span class="n">mVibrationRunnable</span><span class="o">,</span> <span class="n">vib</span><span class="o">.</span><span class="na">mTimeout</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>        <span class="c1">// mThread better be null here. doCancelVibrate should always be</span>
+</span><span class='line'>        <span class="c1">// called before startNextVibrationLocked or startVibrationLocked.</span>
+</span><span class='line'>        <span class="n">mThread</span> <span class="o">=</span> <span class="k">new</span> <span class="n">VibrateThread</span><span class="o">(</span><span class="n">vib</span><span class="o">);</span>
+</span><span class='line'>        <span class="n">mThread</span><span class="o">.</span><span class="na">start</span><span class="o">();</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'><span class="kd">private</span> <span class="kt">void</span> <span class="nf">doVibratorOn</span><span class="o">(</span><span class="kt">long</span> <span class="n">millis</span><span class="o">,</span> <span class="kt">int</span> <span class="n">uid</span><span class="o">,</span> <span class="kt">int</span> <span class="n">usageHint</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">synchronized</span> <span class="o">(</span><span class="n">mInputDeviceVibrators</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">DEBUG</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">Slog</span><span class="o">.</span><span class="na">d</span><span class="o">(</span><span class="n">TAG</span><span class="o">,</span> <span class="s">&quot;Turning vibrator on for &quot;</span> <span class="o">+</span> <span class="n">millis</span> <span class="o">+</span> <span class="s">&quot; ms.&quot;</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="k">try</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">mBatteryStatsService</span><span class="o">.</span><span class="na">noteVibratorOn</span><span class="o">(</span><span class="n">uid</span><span class="o">,</span> <span class="n">millis</span><span class="o">);</span>
+</span><span class='line'>            <span class="n">mCurVibUid</span> <span class="o">=</span> <span class="n">uid</span><span class="o">;</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">catch</span> <span class="o">(</span><span class="n">RemoteException</span> <span class="n">e</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>        <span class="kd">final</span> <span class="kt">int</span> <span class="n">vibratorCount</span> <span class="o">=</span> <span class="n">mInputDeviceVibrators</span><span class="o">.</span><span class="na">size</span><span class="o">();</span>
+</span><span class='line'>        <span class="k">if</span> <span class="o">(</span><span class="n">vibratorCount</span> <span class="o">!=</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>            <span class="kd">final</span> <span class="n">AudioAttributes</span> <span class="n">attributes</span> <span class="o">=</span> <span class="k">new</span> <span class="n">AudioAttributes</span><span class="o">.</span><span class="na">Builder</span><span class="o">().</span><span class="na">setUsage</span><span class="o">(</span><span class="n">usageHint</span><span class="o">)</span>
+</span><span class='line'>                    <span class="o">.</span><span class="na">build</span><span class="o">();</span>
+</span><span class='line'>            <span class="k">for</span> <span class="o">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="o">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">vibratorCount</span><span class="o">;</span> <span class="n">i</span><span class="o">++)</span> <span class="o">{</span>
+</span><span class='line'>                <span class="n">mInputDeviceVibrators</span><span class="o">.</span><span class="na">get</span><span class="o">(</span><span class="n">i</span><span class="o">).</span><span class="na">vibrate</span><span class="o">(</span><span class="n">millis</span><span class="o">,</span> <span class="n">attributes</span><span class="o">);</span>
+</span><span class='line'>            <span class="o">}</span>
+</span><span class='line'>        <span class="o">}</span> <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>            <span class="n">vibratorOn</span><span class="o">(</span><span class="n">millis</span><span class="o">);</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Notes of debugging the kernel using Ftrace]]></title>
+    <link href="http://pyeh.github.io/blog/2014/10/07/notes-of-debugging-the-kernel-using-ftrace/"/>
+    <updated>2014-10-07T23:14:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2014/10/07/notes-of-debugging-the-kernel-using-ftrace</id>
+    <content type="html"><![CDATA[<p>This page has my notes for debugging the kernel using Ftrace</p>
+
+<p>Ftrace is a tracing utility built directly into the Linux kernel. Ftrace was introduced in kernel 2.6.27 by Steven Rostedy and Ingo Molnar. It comes with its own ring buffer for storing trace data, and uses the GCC profiling mechanism. Documentation for this can be found in the Linux kernel source tree at <a href="https://www.kernel.org/doc/Documentation/trace/ftrace.txt">Documentation/trace/ftrace.txt</a></p>
+
+<h4>References:</h4>
+
+<ul>
+<li><a href="http://lwn.net/Articles/365835/">Debugging the kernel using Ftrace &ndash; part 1</a></li>
+<li><a href="http://lwn.net/Articles/366796/">Debugging the kernel using Ftrace &ndash; part 2</a></li>
+<li><a href="http://lwn.net/Articles/370423/">Secrets of the Ftrace function tracer</a></li>
+</ul>
+
+
+<h3>Setting up Ftrace:</h3>
+
+<p>When Ftrace is configured, it will create its own directory called tracing within the debugfs file system.</p>
+
+<pre><code>[~]# cd /sys/kernel/debug/tracing
+[tracing]#
+</code></pre>
+
+<p>For the purpose of debugging, the kernel configuration parameters that should be enabled are:<br/>
+*  Kernel Function Tracer (FUNCTION_TRACER)<br/>
+*  Kernel Function Graph Tracer (FUNCTION_GRAPH_TRACER)<br/>
+*  Enable/disable ftrace dynamically (DYNAMIC_FTRACE)</p>
+
+<p>The function tracer uses the <em>-pg</em> of <em>gcc</em> to have every function in the kernel call a special funciton <code>mcount()</code>.
+During the compilation the mcount() call-sites are recorded, and that list is used at boot time to convert those
+call-sites to NOP when CONFIG_DYNAMIC_FTRACE is set.
+When the function or function graph tracer is enabled, that list is saved to convert those call-sites back to trace calls.</p>
+
+<p>To find out which tracers are available, simply cat the <em>available_tracers</em> file in the tracing directory:</p>
+
+<pre><code>root@K015:/ # cat /d/tracing/available_tracers
+blk function_graph wakeup_rt wakeup preemptirqsoff preemptoff irqsoff function nop
+</code></pre>
+
+<p>To enable the function tracer, just echo &ldquo;function&rdquo; into the <em>current_tracer</em> file.</p>
+
+<pre><code>root@K015:/d/tracing # echo function &gt; current_tracer
+root@K015:/d/tracing # cat&gt; tracer
+# tracer: function
+#
+# entries-in-buffer/entries-written: 205147/172709617   #P:4
+#
+#                              _-----=&gt; irqs-off
+#                             / _----=&gt; need-resched
+#                            | / _---=&gt; hardirq/softirq
+#                            || / _--=&gt; preempt-depth
+#                            ||| /     delay
+#           TASK-PID   CPU#  ||||    TIMESTAMP  FUNCTION
+#              | |       |   ||||       |         |
+        Binder_D-4038  [003] ....    98.468143: cgroup_tasks_write &lt;-cgroup_file_write
+        Binder_D-4038  [003] ....    98.468143: attach_task_by_pid &lt;-cgroup_tasks_write
+        Binder_D-4038  [003] ....    98.468143: cgroup_lock_live_group &lt;-attach_task_by_pid
+        Binder_D-4038  [003] ....    98.468144: mutex_lock &lt;-cgroup_lock_live_group
+        Binder_D-4038  [003] ....    98.468144: __might_sleep &lt;-mutex_lock
+        Binder_D-4038  [003] ....    98.468144: __mutex_lock_slowpath &lt;-mutex_lock
+        Binder_D-4038  [003] ....    98.468144: add_preempt_count &lt;-__mutex_lock_slowpath
+        Binder_D-4038  [003] ...1    98.468145: sub_preempt_count &lt;-__mutex_lock_slowpath
+        Binder_D-4038  [003] ....    98.468145: __rcu_read_lock &lt;-attach_task_by_pid
+</code></pre>
+
+<p>A header is printed with the tracer name that is represented by
+the trace. In this case the tracer is &ldquo;function&rdquo;. Then it shows the
+number of events in the buffer as well as the total number of entries
+that were written. The difference is the number of entries that were
+lost due to the buffer filling up (172709617 &ndash; 205147 = 172504407 events
+lost). #P is the number of online CPUs (#P:4).</p>
+
+<p>The header explains the content of the events. Task name &ldquo;Binder_D&rdquo;, the task
+PID &ldquo;4038&rdquo;, the CPU that it was running on &ldquo;003&rdquo;, the latency format
+(explained below), the timestamp in <secs>.<usecs> format, the
+function name that was traced &ldquo;cgroup_tasks_write&rdquo; and the parent function that
+called this function &ldquo;cgroup_file_write&rdquo;. The timestamp is the time
+at which the function was entered.</p>
+
+<pre><code>irqs-off: 'd' interrupts are disabled. '.' otherwise.
+    Note: If the architecture does not support a way to
+      read the irq flags variable, an 'X' will always
+      be printed here.
+
+need-resched:
+'N' both TIF_NEED_RESCHED and PREEMPT_NEED_RESCHED is set,
+'n' only TIF_NEED_RESCHED is set,
+'p' only PREEMPT_NEED_RESCHED is set,
+'.' otherwise.
+
+hardirq/softirq:
+'H' - hard irq occurred inside a softirq.
+'h' - hard irq is running
+'s' - soft irq is running
+'.' - normal context.
+
+preempt-depth: The level of preempt_disabled
+</code></pre>
+
+<p>The above is mostly meaningful for kernel developers.</p>
+
+<h3>Tips</h3>
+
+<hr />
+
+<h4>Using <em>trace_prink()</em></h4>
+
+<p>If you are debugging a high volume area such as the timer interrupt, the scheduler, or the network, <em>printk()</em> can lead to bogging down the system or can even create a live lock.
+It is also quite common to see a bug &ldquo;disappear&rdquo; when adding a few <em>printk()</em>s. This is due to the sheer overhead that <em>printk()</em> introduces.</p>
+
+<p>Ftrace introduces a new form of <em>printk()</em> called <em>trace_printk()</em>.</p>
+
+<p>For example, below code add entry/exit checkpoints to know how long system stays at standy mode</p>
+
+<figure class='code'><figcaption><span>arch/x86/platform/intel-mid/intel_soc_pmu.c</span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='c'><span class='line'><span class="k">static</span> <span class="kt">int</span> <span class="nf">mid_suspend_enter</span><span class="p">(</span><span class="n">suspend_state_t</span> <span class="n">state</span><span class="p">)</span>
+</span><span class='line'><span class="p">{</span>
+</span><span class='line'>        <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'>
+</span><span class='line'>        <span class="k">if</span> <span class="p">(</span><span class="n">state</span> <span class="o">!=</span> <span class="n">PM_SUSPEND_MEM</span><span class="p">)</span>
+</span><span class='line'>                <span class="k">return</span> <span class="o">-</span><span class="n">EINVAL</span><span class="p">;</span>
+</span><span class='line'><span class="p">...</span><span class="o">&lt;</span><span class="n">SKIP</span><span class="o">&gt;</span><span class="p">...</span>
+</span><span class='line'>        <span class="n">trace_printk</span><span class="p">(</span><span class="s">&quot;s3_entry</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span>
+</span><span class='line'>        <span class="n">ret</span> <span class="o">=</span> <span class="n">standby_enter</span><span class="p">();</span>
+</span><span class='line'>        <span class="n">trace_printk</span><span class="p">(</span><span class="s">&quot;s3_exit %d</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span> <span class="n">ret</span><span class="p">);</span>
+</span><span class='line'><span class="p">...</span><span class="o">&lt;</span><span class="n">SKIP</span><span class="o">&gt;</span><span class="p">...</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+</span><span class='line'><span class="p">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><em>trace_printk()</em> output will appear in any tracer, even the function and function graph tracers.</p>
+
+<pre><code># tracer: nop
+#
+# entries-in-buffer/entries-written: 4/4   #P:4
+#
+#                              _-----=&gt; irqs-off
+#                             / _----=&gt; need-resched
+#                            | / _---=&gt; hardirq/softirq
+#                            || / _--=&gt; preempt-depth
+#                            ||| /     delay
+#           TASK-PID   CPU#  ||||    TIMESTAMP  FUNCTION
+#              | |       |   ||||       |         |
+    kworker/u8:5-1178  [000] d...   318.726581: mid_suspend_enter: s3_entry
+    kworker/u8:5-1178  [000] d...   377.664365: mid_suspend_enter: s3_exit 0
+    kworker/u8:5-1178  [000] d...   378.514933: mid_suspend_enter: s3_entry
+    kworker/u8:5-1178  [000] d...   569.010863: mid_suspend_enter: s3_exit 0
+</code></pre>
+
+<h4>Tracing a specific process</h4>
+
+<p>Trace a specific process, or set of processes. The file set_ftrace_pid lets you specify specific processes that you want to trace.</p>
+
+<pre><code>[tracing]# echo $$ &gt; set_ftrace_pid
+</code></pre>
+
+<p>The above will set the function tracer to only trace the bash shell that executed the echo command.</p>
+
+<p>Clear the <em>set_ftrace_pid file</em> if you want to go back to generic function tracing</p>
+
+<pre><code>[tracing]# echo -1 &gt; set_ftrace_pid
+</code></pre>
+
+<h4>Capturing Ftrace to oops when kernel panic</h4>
+
+<p>You can capture the function calls leading up to a panic by placing the following on the kernel command line</p>
+
+<pre><code>ftrace=function ftrace_dump_on_oops
+</code></pre>
+
+<p>or,  by echoing a &ldquo;1&rdquo; into <em>/proc/sys/kernel/ftrace_dump_on_oops</em>, will enable Ftrace to dump to the console the entire trace buffer in ASCII format on oops or panic.</p>
+
+<h4>Find latencies on kernel startup</h4>
+
+<p>Use the following on the kernel command line:</p>
+
+<pre><code>tracing_thresh=10000 ftrace=function_graph
+</code></pre>
+
+<p>this traces all functions taking longer than 2000 microseconds (10 ms).</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Android RenderScript Notes]]></title>

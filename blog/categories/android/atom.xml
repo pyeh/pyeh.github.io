@@ -4,7 +4,7 @@
   <title><![CDATA[Category: android | Paris Blog]]></title>
   <link href="http://pyeh.github.io/blog/categories/android/atom.xml" rel="self"/>
   <link href="http://pyeh.github.io/"/>
-  <updated>2013-12-12T15:00:12+08:00</updated>
+  <updated>2014-12-29T00:34:10+08:00</updated>
   <id>http://pyeh.github.io/</id>
   <author>
     <name><![CDATA[Han-Chun Yeh (Paris)]]></name>
@@ -12,6 +12,448 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Android vibrator on MSM8909 platform]]></title>
+    <link href="http://pyeh.github.io/blog/2014/12/22/android-vibrator-on-msm8909-platform/"/>
+    <updated>2014-12-22T23:38:00+08:00</updated>
+    <id>http://pyeh.github.io/blog/2014/12/22/android-vibrator-on-msm8909-platform</id>
+    <content type="html"><![CDATA[<p>QPNP (Qualcomm Plug Plug N Play) vibrator is a peripheral on Qualcomm PMICs. The PMIC is connected to MSM8909 via SPMI bus.
+Its driver uses the timed-output framework to interface with the userspace.</p>
+
+<h3>1. MSM8909 Vibrator driver implementation and DTS file</h3>
+
+<p>The vibrator is connected on the VIB_DRV_N line of the QPNP PMIC, and the PMIC vibrator driver can be used to program the voltage from 1.2 V to 3.1 V in 100 mV step through VIB_DRV_N pin.</p>
+
+<h4>DTSI documentation</h4>
+
+<p>``` c kernel/arch/arm/boot/dts/qcom/msm-pm8909.dtsi</p>
+
+<pre><code>            pm8909_vib: qcom,vibrator@c000 {
+                    compatible = "qcom,qpnp-vibrator";
+                    reg = &lt;0xc000 0x100&gt;;
+                    label = "vibrator";
+                    status = "disabled";
+            };
+</code></pre>
+
+<p>```</p>
+
+<h4>Documentation/devicetree/bindings/platform/msm/qpnp-vibrator.txt</h4>
+
+<h5>Required Properties:</h5>
+
+<pre><code>- status: default status is set to "disabled.  Must be "okay"  
+- compatible: must be "qcom,qpnp-vibrator"  
+- label: name which describes the device  
+- reg: address of device  
+</code></pre>
+
+<h5>Optional Properties:</h5>
+
+<pre><code>- qcom,vib-timeout-ms: timeout of vibrator, in ms.  Default 15000 ms  
+- qcom,vib-vtg-level-mV: voltage level, in mV.  Default 3100 mV  
+</code></pre>
+
+<h4>vibrator driver source</h4>
+
+<p>QPNP vibrator operates in two modes &ndash; manual and PWM (Pulse Width Modulation). PWM is supported
+through one of dtest lines connected to the vibrator. Manual mode is used on MSM8909 platform.</p>
+
+<p>``` c qpnp_vibrator_prboe() under kernel/drivers/platform/msm/qpnp-vibrator.c
+static int qpnp_vibrator_probe(struct spmi_device *spmi)
+{</p>
+
+<pre><code>    struct qpnp_vib *vib;
+    struct resource *vib_resource;
+    int rc;
+
+    vib = devm_kzalloc(&amp;spmi-&gt;dev, sizeof(*vib), GFP_KERNEL);
+    if (!vib)
+            return -ENOMEM;
+
+    vib-&gt;spmi = spmi;
+
+    vib_resource = spmi_get_resource(spmi, 0, IORESOURCE_MEM, 0);
+    if (!vib_resource) {
+            dev_err(&amp;spmi-&gt;dev, "Unable to get vibrator base address\n");
+            return -EINVAL;
+    }
+    vib-&gt;base = vib_resource-&gt;start;
+
+    rc = qpnp_vib_parse_dt(vib);
+    if (rc) {
+            dev_err(&amp;spmi-&gt;dev, "DT parsing failed\n");
+            return rc;
+    }
+
+    rc = qpnp_vibrator_config(vib);
+    if (rc) {
+            dev_err(&amp;spmi-&gt;dev, "vib config failed\n");
+            return rc;
+    }
+
+    mutex_init(&amp;vib-&gt;lock);
+    INIT_WORK(&amp;vib-&gt;work, qpnp_vib_update);
+
+    hrtimer_init(&amp;vib-&gt;vib_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+    vib-&gt;vib_timer.function = qpnp_vib_timer_func;
+
+    vib-&gt;timed_dev.name = "vibrator";
+    vib-&gt;timed_dev.get_time = qpnp_vib_get_time;
+    vib-&gt;timed_dev.enable = qpnp_vib_enable;
+
+    dev_set_drvdata(&amp;spmi-&gt;dev, vib);
+
+    rc = timed_output_dev_register(&amp;vib-&gt;timed_dev);
+    if (rc &lt; 0)
+            return rc;
+
+    return rc;
+</code></pre>
+
+<p>}
+```</p>
+
+<h4>Uses timed output framework</h4>
+
+<p>callback <em>.enable</em> and <em>.get_time</em> of <em>struct timed_output_dev</em> is hooked by <code>qpnp_vib_enable()</code> and <code>qpnp_vib_get_time()</code>.
+``` c Implementation of qnp_vib_enable() and qpnp_vib_get_time()
+static void qpnp_vib_enable(struct timed_output_dev *dev, int value)
+{</p>
+
+<pre><code>    struct qpnp_vib *vib = container_of(dev, struct qpnp_vib,
+                                     timed_dev);
+
+    mutex_lock(&amp;vib-&gt;lock);
+    hrtimer_cancel(&amp;vib-&gt;vib_timer);
+
+    if (value == 0)
+            vib-&gt;state = 0;
+    else {
+            value = (value &gt; vib-&gt;timeout ?
+                             vib-&gt;timeout : value);
+            vib-&gt;state = 1;
+            hrtimer_start(&amp;vib-&gt;vib_timer,
+                          ktime_set(value / 1000, (value % 1000) * 1000000),
+                          HRTIMER_MODE_REL);
+    }
+    mutex_unlock(&amp;vib-&gt;lock);
+    schedule_work(&amp;vib-&gt;work);
+</code></pre>
+
+<p>}</p>
+
+<p>static int qpnp_vib_get_time(struct timed_output_dev *dev)
+{</p>
+
+<pre><code>    struct qpnp_vib *vib = container_of(dev, struct qpnp_vib,
+                                                     timed_dev);
+
+    if (hrtimer_active(&amp;vib-&gt;vib_timer)) {
+            ktime_t r = hrtimer_get_remaining(&amp;vib-&gt;vib_timer);
+            return (int)ktime_to_us(r);
+    } else
+            return 0;
+</code></pre>
+
+<p>}
+```</p>
+
+<h4>wq is scheduled to execute work of qpnp_vib_update() and turns off vibrator via qpnp_vibrator_suspend() at suspend callback.</h4>
+
+<p>Inside <code>qpnp_vib_update()</code> and <code>qpnp_vibrator_suspend()</code>, they both call <code>qpnp_vib_set()</code> to turn on/off vibrator.
+``` c Implementation of qpnp_vib_set() to control vibrator via PWM or Manual Mode
+static int qpnp_vib_set(struct qpnp_vib *vib, int on)
+{</p>
+
+<pre><code>    int rc;
+    u8 val;
+
+    if (on) {
+            if (vib-&gt;mode != QPNP_VIB_MANUAL)
+                    pwm_enable(vib-&gt;pwm_info.pwm_dev);
+            else {
+                    val = vib-&gt;reg_en_ctl;
+                    val |= QPNP_VIB_EN;
+                    rc = qpnp_vib_write_u8(vib, &amp;val,
+                                    QPNP_VIB_EN_CTL(vib-&gt;base));
+                    if (rc &lt; 0)
+                            return rc;
+                    vib-&gt;reg_en_ctl = val;
+            }
+    } else {
+            if (vib-&gt;mode != QPNP_VIB_MANUAL)
+                    pwm_disable(vib-&gt;pwm_info.pwm_dev);
+            else {
+                    val = vib-&gt;reg_en_ctl;
+                    val &amp;= ~QPNP_VIB_EN;
+                    rc = qpnp_vib_write_u8(vib, &amp;val,
+                                    QPNP_VIB_EN_CTL(vib-&gt;base));
+                    if (rc &lt; 0)
+                            return rc;
+                    vib-&gt;reg_en_ctl = val;
+            }
+    }
+
+    return 0;
+</code></pre>
+
+<p>}
+```</p>
+
+<h3>2. Timed output class driver</h3>
+
+<p>Timed output is a class drvier to allow changing a state and restore is automatically after a specfied timeout.
+This exposes a user space interface under <em>/sys/class/timed_output/vibrator/enable</em> used by vibrator code.
+``` c kernel/drivers/staging/android/timed_output.c
+static ssize_t enable_show(struct device <em>dev, struct device_attribute </em>attr,</p>
+
+<pre><code>            char *buf)
+</code></pre>
+
+<p>{</p>
+
+<pre><code>    struct timed_output_dev *tdev = dev_get_drvdata(dev);
+    int remaining = tdev-&gt;get_time(tdev);
+
+    return sprintf(buf, "%d\n", remaining);
+</code></pre>
+
+<p>}</p>
+
+<p>static ssize_t enable_store(</p>
+
+<pre><code>            struct device *dev, struct device_attribute *attr,
+            const char *buf, size_t size)
+</code></pre>
+
+<p>{</p>
+
+<pre><code>    struct timed_output_dev *tdev = dev_get_drvdata(dev);
+    int value;
+
+    if (sscanf(buf, "%d", &amp;value) != 1)
+            return -EINVAL;
+
+    tdev-&gt;enable(tdev, value);
+
+    return size;
+</code></pre>
+
+<p>}
+int timed_output_dev_register(struct timed_output_dev *tdev)
+{</p>
+
+<pre><code>    int ret;
+
+    if (!tdev || !tdev-&gt;name || !tdev-&gt;enable || !tdev-&gt;get_time)
+            return -EINVAL;
+
+    ret = create_timed_output_class();
+    if (ret &lt; 0)
+            return ret;
+
+    tdev-&gt;index = atomic_inc_return(&amp;device_count);
+    tdev-&gt;dev = device_create(timed_output_class, NULL,
+            MKDEV(0, tdev-&gt;index), NULL, tdev-&gt;name);
+    if (IS_ERR(tdev-&gt;dev))
+            return PTR_ERR(tdev-&gt;dev);
+
+    ret = device_create_file(tdev-&gt;dev, &amp;dev_attr_enable);
+    if (ret &lt; 0)
+            goto err_create_file;
+
+    dev_set_drvdata(tdev-&gt;dev, tdev);
+    tdev-&gt;state = 0;
+    return 0;
+</code></pre>
+
+<p>err_create_file:</p>
+
+<pre><code>    device_destroy(timed_output_class, MKDEV(0, tdev-&gt;index));
+    pr_err("failed to register driver %s\n",
+                    tdev-&gt;name);
+
+    return ret;
+</code></pre>
+
+<p>}
+EXPORT_SYMBOL_GPL(timed_output_dev_register);
+```</p>
+
+<h3>3. Android vibrator HAL</h3>
+
+<p>Its interface to linux device drivers call with the specified timeout in millisecond via <code>vibrator_on()</code>.</p>
+
+<p>``` c hardware/libhardware_legacy/vibrator/vibrator.c</p>
+
+<h1>define THE_DEVICE &ldquo;/sys/class/timed_output/vibrator/enable&rdquo;</h1>
+
+<p>static int sendit(int timeout_ms)
+{</p>
+
+<pre><code>int nwr, ret, fd;
+char value[20];
+</code></pre>
+
+<h1>ifdef QEMU_HARDWARE</h1>
+
+<pre><code>if (qemu_check()) {
+    return qemu_control_command( "vibrator:%d", timeout_ms );
+}
+</code></pre>
+
+<h1>endif</h1>
+
+<pre><code>fd = open(THE_DEVICE, O_RDWR);
+if(fd &lt; 0)
+    return errno;
+
+nwr = sprintf(value, "%d\n", timeout_ms);
+ret = write(fd, value, nwr);
+
+close(fd);
+
+return (ret == nwr) ? 0 : -1;
+</code></pre>
+
+<p>}</p>
+
+<p>int vibrator_on(int timeout_ms)
+{</p>
+
+<pre><code>/* constant on, up to maximum allowed time */
+return sendit(timeout_ms);
+</code></pre>
+
+<p>}</p>
+
+<p>int vibrator_off()
+{</p>
+
+<pre><code>return sendit(0);
+</code></pre>
+
+<p>}
+```</p>
+
+<h3>4. Native layer through JNI between HAL and vibrator service</h3>
+
+<p>Controls of vibrator service reaches via <code>vibratorOn()</code>, <code>vibratorOff()</code>, and <code>vibratorExists()</code>.</p>
+
+<p>``` c frameworks//base/services/core/jni/com_android_server_VibratorService.cpp
+static void vibratorOn(JNIEnv *env, jobject clazz, jlong timeout_ms)
+{</p>
+
+<pre><code>// ALOGI("vibratorOn\n");
+vibrator_on(timeout_ms);
+</code></pre>
+
+<p>}</p>
+
+<p>static void vibratorOff(JNIEnv *env, jobject clazz)
+{</p>
+
+<pre><code>// ALOGI("vibratorOff\n");
+vibrator_off();
+</code></pre>
+
+<p>}</p>
+
+<p>static JNINativeMethod method_table[] = {</p>
+
+<pre><code>{ "vibratorExists", "()Z", (void*)vibratorExists },
+{ "vibratorOn", "(J)V", (void*)vibratorOn },
+{ "vibratorOff", "()V", (void*)vibratorOff }
+</code></pre>
+
+<p>};</p>
+
+<p>int register_android_server_VibratorService(JNIEnv *env)
+{</p>
+
+<pre><code>return jniRegisterNativeMethods(env, "com/android/server/VibratorService",
+        method_table, NELEM(method_table));
+</code></pre>
+
+<p>}
+```</p>
+
+<h3>5. Java Vibrator Service</h3>
+
+<p>In application layer before controling vibrator, applications have to get the access to the vibrator service.
+The control goes into the vibrator service (<em>Framework Layer</em>) thru binder inteface.
+For example, App. creates Vibrator object and start the vibration via <code>startVibrationLocked(vib)</code>.</p>
+
+<p>Inside <code>startVibrationLocked()</code>:</p>
+
+<p>If mTimeout != 0, then call the JNI function <code>vibratorOn()</code>.
+else, call the code, which handle the rhythmic vibration pattern, which intern call the <code>vibratorOn()</code> through <code>VibrateThread()</code>.</p>
+
+<p>``` java frameworks/base/services/core/java/com/android/server/VibratorService.java</p>
+
+<pre><code>// Lock held on mVibrations
+private void startVibrationLocked(final Vibration vib) {
+    try {
+        if (mLowPowerMode
+                &amp;&amp; vib.mUsageHint != AudioAttributes.USAGE_NOTIFICATION_RINGTONE) {
+            return;
+        }
+
+        int mode = mAppOpsService.checkAudioOperation(AppOpsManager.OP_VIBRATE,
+                vib.mUsageHint, vib.mUid, vib.mOpPkg);
+        if (mode == AppOpsManager.MODE_ALLOWED) {
+            mode = mAppOpsService.startOperation(AppOpsManager.getToken(mAppOpsService),
+                AppOpsManager.OP_VIBRATE, vib.mUid, vib.mOpPkg);
+        }
+        if (mode != AppOpsManager.MODE_ALLOWED) {
+            if (mode == AppOpsManager.MODE_ERRORED) {
+                Slog.w(TAG, "Would be an error: vibrate from uid " + vib.mUid);
+            }
+            mH.post(mVibrationRunnable);
+            return;
+        }
+    } catch (RemoteException e) {
+    }
+    if (vib.mTimeout != 0) {
+        doVibratorOn(vib.mTimeout, vib.mUid, vib.mUsageHint);
+        mH.postDelayed(mVibrationRunnable, vib.mTimeout);
+    } else {
+        // mThread better be null here. doCancelVibrate should always be
+        // called before startNextVibrationLocked or startVibrationLocked.
+        mThread = new VibrateThread(vib);
+        mThread.start();
+    }
+}
+
+private void doVibratorOn(long millis, int uid, int usageHint) {
+    synchronized (mInputDeviceVibrators) {
+        if (DEBUG) {
+            Slog.d(TAG, "Turning vibrator on for " + millis + " ms.");
+        }
+        try {
+            mBatteryStatsService.noteVibratorOn(uid, millis);
+            mCurVibUid = uid;
+        } catch (RemoteException e) {
+        }
+        final int vibratorCount = mInputDeviceVibrators.size();
+        if (vibratorCount != 0) {
+            final AudioAttributes attributes = new AudioAttributes.Builder().setUsage(usageHint)
+                    .build();
+            for (int i = 0; i &lt; vibratorCount; i++) {
+                mInputDeviceVibrators.get(i).vibrate(millis, attributes);
+            }
+        } else {
+            vibratorOn(millis);
+        }
+    }
+}
+</code></pre>
+
+<p>```</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Android RenderScript Notes]]></title>
@@ -581,23 +1023,6 @@ static tables (I2C, SPI, GPIO) to the operation system.</p>
 <a href="https://lkml.org/lkml/2013/10/10/81">https://lkml.org/lkml/2013/10/10/81</a></p>
 
 <p>/arch/x86/platform/intel-mid/intel_mid_sfi.c is SFI parsing implementation, and let me understand how get_gpio_by_name() works.</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Android ram-console upstreaming]]></title>
-    <link href="http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming/"/>
-    <updated>2013-11-08T17:45:00+08:00</updated>
-    <id>http://pyeh.github.io/blog/2013/11/08/android-ram-console-upstreaming</id>
-    <content type="html"><![CDATA[<p>While dealing with board bring-up powered by Tegra5, starts to aware of this upstream change for ram console (aka /proc/last_kmsg). A working group, Android Upstreaming, comes from Linaro foundation to merge ram_console into pstore framework ( <a href="http://lwn.net/Articles/497881/">http://lwn.net/Articles/497881/</a>).</p>
-
-<p>The Android Upstreaming team&rsquo;s mission is to reduce and eventually eliminate the differences between the upstream kernel and the Android kernel. The team works closely with Google and upstream kernel developers to find ways to implement Android required features in a way that meets the need of both communities.</p>
-
-<p>There are currently two competing debug facilities to store kernel messages in a persistent storage: a generic pstore and Google&rsquo;s persistent_ram by Colin Cross. Not so long ago (<a href="https://lkml.org/lkml/2012/3/8/252">https://lkml.org/lkml/2012/3/8/252</a>) noticed by Greg KH@ARM Linux, it was decided to fix this situation. There is a buleprint registered by Linaro Linux to descrbie those debug facilities at <a href="https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console">https://blueprints.launchpad.net/linux-linaro/+spec/android-ram-console</a></p>
-
-<p>To follow up android upstreaming&rsquo;s works, I remove legacy driver supporting for ram console and persistent ram and switch new pstore framework. In other words, start to looking into /sys/fs/pstore/console-ramoops as we used to did analysis on /proc/last_kmsg for dying moment across system reboot.</p>
-
-<p>My works were merged into Asus internal development branch jb-mr2-t50-k3.10, but not opened yet. We could refer to <a href="https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10">https://android.googlesource.com/kernel/tegra/+/android-tegra-3.10</a> for further reference.</p>
 ]]></content>
   </entry>
   
